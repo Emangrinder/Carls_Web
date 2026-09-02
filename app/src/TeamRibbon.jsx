@@ -7,12 +7,12 @@ const TEAMS = [
   'TEN', 'WAS',
 ]
 
-function Logo({ team }) {
+function Logo({ team, className = '' }) {
   return (
     <img
       src={`${import.meta.env.BASE_URL}logos/${team}.png`}
       alt={team}
-      className="h-10 w-10 shrink-0 object-contain md:h-12 md:w-12"
+      className={`h-10 w-10 shrink-0 object-contain md:h-12 md:w-12 ${className}`}
     />
   )
 }
@@ -32,9 +32,9 @@ export default function TeamRibbon() {
             'linear-gradient(to right, transparent, black 48px, black calc(100% - 48px), transparent)',
         }}
       >
-        <div className="flex w-max animate-ribbon gap-8">
+        <div className="flex w-max animate-ribbon">
           {[...TEAMS, ...TEAMS].map((team, i) => (
-            <Logo key={`${team}-${i}`} team={team} />
+            <Logo key={`${team}-${i}`} team={team} className="mr-8" />
           ))}
         </div>
       </div>
