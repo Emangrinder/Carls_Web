@@ -1,7 +1,8 @@
 import { Fragment, useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { supabase } from './supabaseClient'
 
-const SEASONS = [2025, 2024]
+const SEASONS = [2025, 2024, 2026]
 const CONFERENCE_ORDER = { AFC: 0, NFC: 1 }
 
 function fmtDiff(n) {
@@ -196,15 +197,20 @@ export default function TeamStatsTable() {
                   key={r.team}
                   className="border-b border-neutral-100 dark:border-neutral-900"
                 >
-                  <td className="flex items-center gap-2 py-2 pr-2">
-                    <img
-                      src={`${import.meta.env.BASE_URL}logos/${r.team}.png`}
-                      alt={r.team}
-                      className="h-6 w-6 object-contain"
-                    />
-                    <span className="font-medium text-neutral-900 dark:text-neutral-100">
-                      {r.team}
-                    </span>
+                  <td className="py-2 pr-2">
+                    <Link
+                      to={`/team/${r.team}`}
+                      className="flex items-center gap-2 hover:underline"
+                    >
+                      <img
+                        src={`${import.meta.env.BASE_URL}logos/${r.team}.png`}
+                        alt={r.team}
+                        className="h-6 w-6 object-contain"
+                      />
+                      <span className="font-medium text-neutral-900 dark:text-neutral-100">
+                        {r.team}
+                      </span>
+                    </Link>
                   </td>
                   <td className="px-2 py-2 text-neutral-500">{r.conference}</td>
                   <td className="px-2 py-2 text-right tabular-nums">
