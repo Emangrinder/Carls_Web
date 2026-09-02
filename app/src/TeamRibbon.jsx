@@ -20,15 +20,15 @@ function Logo({ team }) {
 export default function TeamRibbon() {
   return (
     <div className="flex w-full items-center gap-4 border-b border-neutral-200 bg-white px-4 py-2 dark:border-neutral-800 dark:bg-neutral-950">
+      <div className="shrink-0 border-r border-neutral-200 pr-4 dark:border-neutral-800">
+        <Logo team="NFL" />
+      </div>
       <div className="min-w-0 flex-1 overflow-hidden">
         <div className="flex w-max animate-ribbon gap-8">
           {[...TEAMS, ...TEAMS].map((team, i) => (
             <Logo key={`${team}-${i}`} team={team} />
           ))}
         </div>
-      </div>
-      <div className="shrink-0 border-l border-neutral-200 pl-4 dark:border-neutral-800">
-        <Logo team="NFL" />
       </div>
     </div>
   )
