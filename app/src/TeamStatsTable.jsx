@@ -1,7 +1,8 @@
-import { Fragment, useEffect, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import { supabase } from './supabaseClient'
 
 const SEASONS = [2025, 2024]
+const CONFERENCE_ORDER = { AFC: 0, NFC: 1 }
 
 function fmtDiff(n) {
   if (n == null) return '—'
@@ -19,11 +20,44 @@ const COLUMNS = [
   { key: 'punt_return_yards_avg', against: 'punt_return_yards_allowed_avg', label: 'Punt Ret Avg' },
 ]
 
+// sortKey is either 'team', 'win_diff', 'point_diff', or "<stat>:for" / "<stat>:against" / "<stat>:diff"
+function getSortValue(row, sortKey) {
+  if (sortKey === 'team' || sortKey === 'win_diff' || sortKey === 'point_diff') {
+    return row[sortKey]
+  }
+  const [stat, mode] = sortKey.split(':')
+  const col = COLUMNS.find((c) => c.key === stat)
+  if (!col) return null
+  if (mode === 'for') return row[col.key]
+  if (mode === 'against') return row[col.against]
+  return (row[col.key] ?? 0) - (row[col.against] ?? 0) // diff
+}
+
+function compareRows(a, b, sortKey, sortDir) {
+  const va = getSortValue(a, sortKey)
+  const vb = getSortValue(b, sortKey)
+  let result
+  if (typeof va === 'string' || typeof vb === 'string') {
+    result = String(va ?? '').localeCompare(String(vb ?? ''))
+  } else {
+    result = (va ?? -Infinity) - (vb ?? -Infinity)
+  }
+  return sortDir === 'asc' ? result : -result
+}
+
+function SortIndicator({ active, dir }) {
+  if (!active) return null
+  return <span className="ml-1 text-[10px]">{dir === 'asc' ? '▲' : '▼'}</span>
+}
+
 export default function TeamStatsTable() {
   const [season, setSeason] = useState(SEASONS[0])
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [sortKey, setSortKey] = useState('win_diff')
+  const [sortDir, setSortDir] = useState('desc')
+  const [groupByConference, setGroupByConference] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -34,7 +68,6 @@ export default function TeamStatsTable() {
       .from('team_season_stats')
       .select('*')
       .eq('season', season)
-      .order('win_diff', { ascending: false })
       .then(({ data, error }) => {
         if (cancelled) return
         if (error) setError(error.message)
@@ -46,6 +79,26 @@ export default function TeamStatsTable() {
       cancelled = true
     }
   }, [season])
+
+  function handleSort(key) {
+    if (key === sortKey) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setSortKey(key)
+      setSortDir(key === 'team' ? 'asc' : 'desc')
+    }
+  }
+
+  const sortedRows = useMemo(() => {
+    const byValue = (a, b) => compareRows(a, b, sortKey, sortDir)
+    if (!groupByConference) return [...rows].sort(byValue)
+    return [...rows].sort((a, b) => {
+      const confDiff = CONFERENCE_ORDER[a.conference] - CONFERENCE_ORDER[b.conference]
+      return confDiff !== 0 ? confDiff : byValue(a, b)
+    })
+  }, [rows, sortKey, sortDir, groupByConference])
+
+  const thBase = 'cursor-pointer select-none hover:text-neutral-900 dark:hover:text-neutral-100'
 
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-6">
@@ -74,15 +127,43 @@ export default function TeamStatsTable() {
           <table className="w-full min-w-[950px] border-collapse text-sm">
             <thead>
               <tr className="border-b border-neutral-200 text-left text-neutral-500 dark:border-neutral-800">
-                <th className="py-2 pr-2 font-medium">Team</th>
-                <th className="px-2 py-2 text-left font-medium">Conf</th>
-                <th className="px-2 py-2 text-right font-medium">Record Diff</th>
+                <th className={`${thBase} py-2 pr-2 font-medium`} onClick={() => handleSort('team')}>
+                  Team
+                  <SortIndicator active={sortKey === 'team'} dir={sortDir} />
+                </th>
+                <th
+                  className={`${thBase} px-2 py-2 text-left font-medium ${groupByConference ? 'text-neutral-900 dark:text-neutral-100' : ''}`}
+                  onClick={() => setGroupByConference((g) => !g)}
+                  title="Toggle grouping by conference"
+                >
+                  Conf
+                </th>
+                <th
+                  className={`${thBase} px-2 py-2 text-right font-medium`}
+                  onClick={() => handleSort('win_diff')}
+                >
+                  Record Diff
+                  <SortIndicator active={sortKey === 'win_diff'} dir={sortDir} />
+                </th>
                 {COLUMNS.map((c) => (
-                  <th key={c.key} colSpan={2} className="px-2 py-2 text-center font-medium">
+                  <th
+                    key={c.key}
+                    colSpan={2}
+                    className={`${thBase} px-2 py-2 text-center font-medium`}
+                    onClick={() => handleSort(`${c.key}:diff`)}
+                    title={`Sort by ${c.label} differential`}
+                  >
                     {c.label}
+                    <SortIndicator active={sortKey === `${c.key}:diff`} dir={sortDir} />
                   </th>
                 ))}
-                <th className="py-2 pl-2 text-right font-medium">Point Diff</th>
+                <th
+                  className={`${thBase} py-2 pl-2 text-right font-medium`}
+                  onClick={() => handleSort('point_diff')}
+                >
+                  Point Diff
+                  <SortIndicator active={sortKey === 'point_diff'} dir={sortDir} />
+                </th>
               </tr>
               <tr className="border-b border-neutral-200 text-left text-[11px] text-neutral-400 dark:border-neutral-800">
                 <th></th>
@@ -90,15 +171,27 @@ export default function TeamStatsTable() {
                 <th></th>
                 {COLUMNS.map((c) => (
                   <Fragment key={c.key}>
-                    <th className="px-2 pb-1 text-right font-normal">For</th>
-                    <th className="px-2 pb-1 text-right font-normal">Against</th>
+                    <th
+                      className={`${thBase} px-2 pb-1 text-right font-normal`}
+                      onClick={() => handleSort(`${c.key}:for`)}
+                    >
+                      For
+                      <SortIndicator active={sortKey === `${c.key}:for`} dir={sortDir} />
+                    </th>
+                    <th
+                      className={`${thBase} px-2 pb-1 text-right font-normal`}
+                      onClick={() => handleSort(`${c.key}:against`)}
+                    >
+                      Against
+                      <SortIndicator active={sortKey === `${c.key}:against`} dir={sortDir} />
+                    </th>
                   </Fragment>
                 ))}
                 <th></th>
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => (
+              {sortedRows.map((r) => (
                 <tr
                   key={r.team}
                   className="border-b border-neutral-100 dark:border-neutral-900"
