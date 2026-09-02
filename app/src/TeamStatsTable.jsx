@@ -2,7 +2,8 @@ import { Fragment, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from './supabaseClient'
 
-const SEASONS = [2025, 2024, 2026]
+const SEASONS = [2026, 2025, 2024]
+const DEFAULT_SEASON = 2025
 const CONFERENCE_ORDER = { AFC: 0, NFC: 1 }
 
 function fmtDiff(n) {
@@ -52,7 +53,7 @@ function SortIndicator({ active, dir }) {
 }
 
 export default function TeamStatsTable() {
-  const [season, setSeason] = useState(SEASONS[0])
+  const [season, setSeason] = useState(DEFAULT_SEASON)
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
