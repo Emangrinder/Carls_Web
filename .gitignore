@@ -1,6 +1,12 @@
 node_modules/
 dist/
 
+# ETL: generated locally / in CI, never committed — the pipeline rebuilds
+# these from scratch every run
+etl/db/
+etl/data/**/raw/
+etl/data/nflverse/reference/*.csv
+
 # secrets — never commit
 .env
 .env.local

@@ -1,0 +1,60 @@
+name: nflverse ETL
+
+on:
+  schedule:
+    - cron: "0 11 * * *"  # ~6-7am US Eastern, daily
+  workflow_dispatch: {}
+
+env:
+  # Full seasons to keep loaded for box-score stats + injury history. Every
+  # run rebuilds ALL of these from scratch (the runner starts with no local
+  # state), so removing a season here means it drops out of Postgres on the
+  # next sync, not just "stops updating" — this list IS the retention window.
+  SEASONS: "2024 2025"
+  # Single-snapshot tables (active roster, current injuries, depth chart).
+  # Bump this once nflverse starts publishing the new season's data (usually
+  # once week 1 rosters/injuries actually exist) -- until then the old
+  # season's file is still the most current thing nflverse has published.
+  CURRENT_SEASON: "2025"
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y postgresql-client
+          pip install -r etl/requirements.txt
+
+      - name: Build box-score stats + injury history for each retained season
+        run: |
+          set -e
+          for season in $SEASONS; do
+            python3 etl/data/nflverse/build_db.py --season "$season"
+            python3 etl/data/player_management/history/injuries/build_injuries.py --season "$season"
+          done
+
+      - name: Build current-season snapshots (roster, injuries, depth chart)
+        run: |
+          python3 etl/data/player_management/active/build_active_roster.py --season "$CURRENT_SEASON"
+          python3 etl/data/player_management/active/build_current_injuries.py --season "$CURRENT_SEASON"
+          python3 etl/data/player_management/history/depth_charts/build_depth_charts.py --season "$CURRENT_SEASON"
+
+      - name: Build trades ledger (all-time, no season arg)
+        run: python3 etl/data/player_management/history/trades/build_trades.py
+
+      - name: Build college rosters + stats (last ~10 seasons, hardcoded in script)
+        run: |
+          python3 etl/data/college/build_college_rosters.py
+          python3 etl/data/college/build_college_stats.py
+
+      - name: Sync everything into Supabase
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: python3 etl/sync_to_supabase.py
