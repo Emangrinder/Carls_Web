@@ -41,7 +41,7 @@ export default function DivisionNav() {
             return (
               <div key={div} className="mb-3">
                 <h3 className="mb-1 text-[11px] font-medium text-neutral-400">{div}</h3>
-                <div className="grid grid-cols-4 gap-1.5">
+                <div className="grid grid-cols-1 gap-1.5">
                   {teamAbbrs.map((abbr) => (
                     <Link key={abbr} to={`/team/${abbr}`} title={abbr}>
                       <img

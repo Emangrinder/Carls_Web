@@ -4,8 +4,8 @@ import { supabase } from './supabaseClient'
 
 const SEASONS = [2026, 2025, 2024]
 const DEFAULT_SEASON = 2025
-const WEEKS_PART1 = Array.from({ length: 8 }, (_, i) => i + 1) // 1-8
-const WEEKS_PART2 = Array.from({ length: 10 }, (_, i) => i + 9) // 9-18
+const WEEKS_PART1 = Array.from({ length: 9 }, (_, i) => i + 1) // 1-9
+const WEEKS_PART2 = Array.from({ length: 9 }, (_, i) => i + 10) // 10-18
 const POSTSEASON_LABELS = { WC: 'WC', DIV: 'DIV', CON: 'CONF', SB: 'SB' }
 
 function fmtDiff(n) {
@@ -83,7 +83,7 @@ function isSkillStarter(p) {
 
 function PlayerChip({ p }) {
   return (
-    <div className="rounded border border-neutral-200 px-2 py-1 text-center text-xs dark:border-neutral-800">
+    <div className="shrink-0 whitespace-nowrap rounded border border-neutral-200 px-2 py-1 text-center text-xs dark:border-neutral-800">
       <div className="text-[10px] text-neutral-500">
         {p.position_abbr}
         {p.rank > 1 ? p.rank : ''}
@@ -139,9 +139,9 @@ function GameCell({ teamAbbr, game, byeLabel }) {
 function StarterRow({ label, players }) {
   if (players.length === 0) return null
   return (
-    <div className="mb-2 flex flex-wrap items-center gap-2">
+    <div className="mb-2 flex items-center gap-2">
       <span className="w-24 shrink-0 text-xs text-neutral-500">{label}</span>
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-nowrap gap-2 overflow-x-auto">
         {players.map((p) => (
           <PlayerChip key={`${p.position_name}-${p.position_slot}-${p.rank}`} p={p} />
         ))}
@@ -272,7 +272,7 @@ export default function TeamPage() {
 
       {/* Starters depth chart (left) + schedule/record/season stats (right) */}
       <div className="mb-8 flex flex-col gap-8 lg:flex-row">
-        <div className="lg:w-[380px] lg:shrink-0">
+        <div className="lg:w-[620px] lg:shrink-0">
           <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-neutral-500">
             2026 Depth Chart
           </h2>
