@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { supabase } from './supabaseClient'
+import { TEAM_COLORS, hexToRgba, contrastTextColor } from './teamColors'
 
 const POSTSEASON_LABELS = { WC: 'Wild Card', DIV: 'Divisional', CON: 'Conference Championship', SB: 'Super Bowl' }
 
@@ -164,6 +165,29 @@ const RETURN_COLUMNS = [
   c('TD', 'special_teams_tds'),
 ]
 
+// Away team's colors on the left, home team's on the right, primary at the
+// top fading to secondary at the bottom on each side, with a gray band
+// where the two sides meet in the middle. Built as three stacked
+// background-image layers (a full-width gray fade over two half-width
+// vertical team gradients) since a single CSS gradient can't vary in both
+// directions at once.
+function pageGradientStyle(awayAbbr, homeAbbr) {
+  const away = TEAM_COLORS[awayAbbr]
+  const home = TEAM_COLORS[homeAbbr]
+  if (!away || !home) return {}
+  const alpha = 0.18
+  return {
+    backgroundImage: [
+      'linear-gradient(to right, transparent 0%, transparent 12%, rgba(115,115,115,0.35) 50%, transparent 88%, transparent 100%)',
+      `linear-gradient(to bottom, ${hexToRgba(away.primary, alpha)}, ${hexToRgba(away.secondary, alpha)})`,
+      `linear-gradient(to bottom, ${hexToRgba(home.primary, alpha)}, ${hexToRgba(home.secondary, alpha)})`,
+    ].join(', '),
+    backgroundSize: '100% 100%, 50% 100%, 50% 100%',
+    backgroundPosition: '0 0, left top, right top',
+    backgroundRepeat: 'no-repeat',
+  }
+}
+
 function recordFor(games, team) {
   let wins = 0
   let losses = 0
@@ -219,6 +243,21 @@ function TeamHeader({ abbr, name, score, isWinner, played, align }) {
 // One table, three time windows (Pre-game / Season / Game) each split into
 // an away/home sub-column -- matches the grouped-column convention already
 // used by the league table (TeamStatsTable's For/Against columns).
+// Team-colored pill for a column header -- background is the team's own
+// primary color, text picked for contrast against it rather than assumed.
+function TeamAbbrChip({ abbr }) {
+  const colors = TEAM_COLORS[abbr]
+  if (!colors) return <span>{abbr}</span>
+  return (
+    <span
+      className="inline-block rounded px-1.5 py-0.5 font-semibold"
+      style={{ backgroundColor: colors.primary, color: contrastTextColor(colors.primary) }}
+    >
+      {abbr}
+    </span>
+  )
+}
+
 function MatchupStatsTable({ windows, awayAbbr, homeAbbr }) {
   return (
     <div className="mb-8 overflow-x-auto">
@@ -236,8 +275,12 @@ function MatchupStatsTable({ windows, awayAbbr, homeAbbr }) {
             <th></th>
             {windows.map((w) => (
               <Fragment key={w.label}>
-                <th className="px-2 pb-1 text-right font-normal">{awayAbbr}</th>
-                <th className="px-2 pb-1 text-right font-normal">{homeAbbr}</th>
+                <th className="px-2 pb-1 text-right font-normal">
+                  <TeamAbbrChip abbr={awayAbbr} />
+                </th>
+                <th className="px-2 pb-1 text-right font-normal">
+                  <TeamAbbrChip abbr={homeAbbr} />
+                </th>
               </Fragment>
             ))}
           </tr>
@@ -314,7 +357,7 @@ function BoxScoreSection({ title, columns, awayRows, homeRows, awayAbbr, homeAbb
   return (
     <div className="mb-6">
       <h3 className="mb-2 text-xs font-bold uppercase text-neutral-400">{title}</h3>
-      <div className="grid gap-4 overflow-x-auto sm:grid-cols-2">
+      <div className="grid gap-6 overflow-x-auto sm:grid-cols-2 sm:gap-x-12">
         <BoxScoreTeamTable abbr={awayAbbr} rows={awayRows} columns={columns} />
         <BoxScoreTeamTable abbr={homeAbbr} rows={homeRows} columns={columns} />
       </div>
@@ -525,7 +568,12 @@ export default function GamePage() {
   const returns = byTeam(specialTeams, (r) => (r.kickoff_returns ?? 0) > 0 || (r.punt_returns ?? 0) > 0)
 
   return (
-    <div className="mx-auto w-full max-w-4xl px-4 py-6">
+    <div className="relative">
+      <div
+        className="pointer-events-none absolute inset-0"
+        style={pageGradientStyle(game.away_team, game.home_team)}
+      />
+      <div className="relative mx-auto w-full max-w-4xl px-4 py-6">
       <Link to="/matches" className="mb-4 inline-block text-xs text-neutral-500 hover:underline">
         ← Back to Matches
       </Link>
@@ -638,6 +686,7 @@ export default function GamePage() {
           <BoxScoreSection title="Return" columns={RETURN_COLUMNS} awayRows={returns.away} homeRows={returns.home} awayAbbr={game.away_team} homeAbbr={game.home_team} />
         </>
       )}
+      </div>
     </div>
   )
 }
