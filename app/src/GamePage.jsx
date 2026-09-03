@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { supabase } from './supabaseClient'
 
@@ -23,6 +23,10 @@ function fmtCount(n) {
   return n ?? 0
 }
 
+function fmtPct(n) {
+  return n == null ? '—' : `${n}%`
+}
+
 function fmtKickoff(gameday, weekday, gametime) {
   if (!gameday) return weekday || 'Date TBD'
   const dateStr = new Date(`${gameday}T00:00:00`).toLocaleDateString(undefined, {
@@ -42,53 +46,50 @@ function weekLabel(game) {
   return game.game_type === 'REG' ? `Week ${game.week}` : POSTSEASON_LABELS[game.game_type] ?? game.game_type
 }
 
-// Per-game-average rows, shared by the "Heading In" and "Season Average"
-// comparison tables -- same fields as team_game_stats, just averaged over
-// however many games fall inside that window.
-const AVG_STAT_ROWS = [
-  ['Pass Yds/G', 'pass_yds'],
-  ['Rush Yds/G', 'rush_yds'],
-  ['Pass TD/G', 'pass_td'],
-  ['Rush TD/G', 'rush_td'],
-  ['INT Thrown/G', 'ints_thrown'],
-  ['Fumbles Lost/G', 'fumbles_lost'],
-  ['Sacks/G', 'sacks'],
-  ['QB Hits/G', 'qb_hits'],
-  ['Def INT/G', 'def_ints'],
-  ['Punts/G', 'punts'],
-  ['Punt Yds/G', 'punt_yards'],
-  ['Kick Ret Yds/G', 'kick_return_yards'],
-  ['Punt Ret Yds/G', 'punt_return_yards'],
+// Same row set (labels + combined-value formatting) as the team-page's own
+// season stats table, so this page reads as the same "language" -- just
+// against a single team's own numbers per window instead of a for/against
+// split.
+const STAT_ROWS = [
+  { label: 'Rush Yds Avg', render: (s) => fmtAvg(s.rush_yds_avg) },
+  { label: 'Pass Yds Avg', render: (s) => fmtAvg(s.pass_yds_avg) },
+  { label: 'Turnovers [I/F]', render: (s) => `${fmtCount(s.turnovers_int)}/${fmtCount(s.turnovers_fumble)}` },
+  { label: 'Pass/Rush TD', render: (s) => `${fmtCount(s.pass_td)}/${fmtCount(s.rush_td)}` },
+  { label: 'Sacks/QB Hits', render: (s) => `${fmtCount(s.sacks)}/${fmtCount(s.qb_hits)}` },
+  { label: 'Punts Avg', render: (s) => fmtAvg(s.punts_avg) },
+  { label: 'Punt Return %', render: (s) => fmtPct(s.punt_return_pct_for) },
+  { label: 'Kick Return Yds Avg', render: (s) => fmtAvg(s.kick_return_yards_avg) },
+  { label: 'Punt Return Yds Avg', render: (s) => fmtAvg(s.punt_return_yards_avg) },
+  { label: 'Offensive Snaps Avg', render: (s) => fmtAvg(s.offense_snaps_avg) },
+  { label: 'Defensive Snaps Avg', render: (s) => fmtAvg(s.defense_snaps_avg) },
 ]
 
-// Same fields as AVG_STAT_ROWS but the raw single-game totals, for the
-// "This Game" table -- kept as a separate list so labels drop the "/G".
-const GAME_STAT_ROWS = [
-  ['Pass Yds', 'pass_yds'],
-  ['Rush Yds', 'rush_yds'],
-  ['Pass TD', 'pass_td'],
-  ['Rush TD', 'rush_td'],
-  ['INT Thrown', 'ints_thrown'],
-  ['Fumbles Lost', 'fumbles_lost'],
-  ['Sacks', 'sacks'],
-  ['QB Hits', 'qb_hits'],
-  ['Def INT', 'def_ints'],
-  ['Punts', 'punts'],
-  ['Punt Yds', 'punt_yards'],
-  ['Kick Ret Yds', 'kick_return_yards'],
-  ['Punt Ret Yds', 'punt_return_yards'],
-]
-
-// Averages a set of team_game_stats rows (all belonging to one team) down
-// to per-game numbers. Returns null when there are no games in the window
-// so callers can show a "no games yet" state instead of a wall of zeros.
-function avgStats(rows) {
+// Collapses a set of team_game_stats rows (all belonging to one team) into
+// the same field shape team_season_stats uses (*_avg fields, summed counts,
+// punt_return_pct_for) -- one game's worth of rows works too, so the same
+// function and the same STAT_ROWS render feed the Pre-game, Season, and
+// Game columns alike. Returns null for an empty window (no games yet).
+function buildStatRow(rows) {
   if (rows.length === 0) return null
   const n = rows.length
   const sum = (key) => rows.reduce((acc, r) => acc + (r[key] ?? 0), 0)
-  const out = { games: n }
-  for (const [, key] of AVG_STAT_ROWS) out[key] = sum(key) / n
-  return out
+  const puntsSum = sum('punts')
+  return {
+    rush_yds_avg: sum('rush_yds') / n,
+    pass_yds_avg: sum('pass_yds') / n,
+    turnovers_int: sum('ints_thrown'),
+    turnovers_fumble: sum('fumbles_lost'),
+    pass_td: sum('pass_td'),
+    rush_td: sum('rush_td'),
+    sacks: sum('sacks'),
+    qb_hits: sum('qb_hits'),
+    punts_avg: puntsSum / n,
+    punt_return_pct_for: puntsSum ? Math.round((1000 * sum('pt_returned')) / puntsSum) / 10 : null,
+    kick_return_yards_avg: sum('kick_return_yards') / n,
+    punt_return_yards_avg: sum('punt_return_yards') / n,
+    offense_snaps_avg: sum('offense_snaps') / n,
+    defense_snaps_avg: sum('defense_snaps') / n,
+  }
 }
 
 function recordFor(games, team) {
@@ -143,36 +144,50 @@ function TeamHeader({ abbr, name, score, isWinner, played, align }) {
   )
 }
 
-// Shared by the pregame/season-average/this-game comparison tables --
-// `rows` is either AVG_STAT_ROWS or GAME_STAT_ROWS, `fmt` picks fmtAvg vs
-// fmtCount so per-game averages show a decimal and raw totals don't.
-function StatComparisonTable({ title, subtitle, rows, fmt, awayData, homeData, awayAbbr, homeAbbr }) {
+// One table, three time windows (Pre-game / Season / Game) each split into
+// an away/home sub-column -- matches the grouped-column convention already
+// used by the league table (TeamStatsTable's For/Against columns).
+function MatchupStatsTable({ windows, awayAbbr, homeAbbr }) {
   return (
-    <div className="mb-8">
-      <h2 className="mb-0.5 text-sm font-semibold uppercase tracking-wide text-neutral-500">{title}</h2>
-      {subtitle && <p className="mb-2 text-xs text-neutral-400">{subtitle}</p>}
-      {!awayData || !homeData ? (
-        <p className="text-sm text-neutral-400">No games in this window yet.</p>
-      ) : (
-        <table className="w-full border-collapse text-sm">
-          <thead>
-            <tr className="border-b border-neutral-200 text-left text-neutral-500 dark:border-neutral-800">
-              <th className="py-2 text-right font-medium">{awayAbbr}</th>
-              <th className="py-2 pl-4 font-medium">Stat</th>
-              <th className="py-2 pl-4 text-left font-medium">{homeAbbr}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map(([label, key]) => (
-              <tr key={key} className="border-b border-neutral-100 dark:border-neutral-900">
-                <td className="py-1.5 text-right tabular-nums">{fmt(awayData[key])}</td>
-                <td className="py-1.5 pl-4 text-neutral-500">{label}</td>
-                <td className="py-1.5 pl-4 tabular-nums">{fmt(homeData[key])}</td>
-              </tr>
+    <div className="mb-8 overflow-x-auto">
+      <table className="w-full min-w-[640px] border-collapse text-sm">
+        <thead>
+          <tr className="border-b border-neutral-200 text-left text-neutral-500 dark:border-neutral-800">
+            <th className="py-2 font-medium">Stat</th>
+            {windows.map((w) => (
+              <th key={w.label} colSpan={2} className="px-2 py-2 text-center font-medium">
+                {w.label}
+              </th>
             ))}
-          </tbody>
-        </table>
-      )}
+          </tr>
+          <tr className="border-b border-neutral-200 text-left text-[11px] text-neutral-400 dark:border-neutral-800">
+            <th></th>
+            {windows.map((w) => (
+              <Fragment key={w.label}>
+                <th className="px-2 pb-1 text-right font-normal">{awayAbbr}</th>
+                <th className="px-2 pb-1 text-right font-normal">{homeAbbr}</th>
+              </Fragment>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {STAT_ROWS.map((row) => (
+            <tr key={row.label} className="border-b border-neutral-100 dark:border-neutral-900">
+              <td className="py-1.5 text-neutral-500">{row.label}</td>
+              {windows.map((w) => (
+                <Fragment key={w.label}>
+                  <td className="px-2 py-1.5 text-right tabular-nums">
+                    {w.away ? row.render(w.away) : '—'}
+                  </td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">
+                    {w.home ? row.render(w.home) : '—'}
+                  </td>
+                </Fragment>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   )
 }
@@ -381,10 +396,12 @@ export default function GamePage() {
   const awayPregameRows =
     game.game_type === 'REG' ? awaySeasonRows.filter((r) => r.week < game.week) : awaySeasonRows
 
-  const homePregameAvg = avgStats(homePregameRows)
-  const awayPregameAvg = avgStats(awayPregameRows)
-  const homeSeasonAvg = avgStats(homeSeasonRows)
-  const awaySeasonAvg = avgStats(awaySeasonRows)
+  const homePregameStats = buildStatRow(homePregameRows)
+  const awayPregameStats = buildStatRow(awayPregameRows)
+  const homeSeasonStats = buildStatRow(homeSeasonRows)
+  const awaySeasonStats = buildStatRow(awaySeasonRows)
+  const homeGameStatRow = buildStatRow(homeGameStats ? [homeGameStats] : [])
+  const awayGameStatRow = buildStatRow(awayGameStats ? [awayGameStats] : [])
 
   const homeInjuries = injuries.filter((r) => r.team === game.home_team)
   const awayInjuries = injuries.filter((r) => r.team === game.away_team)
@@ -464,40 +481,15 @@ export default function GamePage() {
         )}
       </div>
 
-      <StatComparisonTable
-        title="Heading In"
-        subtitle={
-          game.game_type === 'REG' && game.week > 1
-            ? `Regular-season average, weeks 1–${game.week - 1}`
-            : 'Regular-season average'
-        }
-        rows={AVG_STAT_ROWS}
-        fmt={fmtAvg}
-        awayData={awayPregameAvg}
-        homeData={homePregameAvg}
+      <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-neutral-500">Team Stats</h2>
+      <MatchupStatsTable
         awayAbbr={game.away_team}
         homeAbbr={game.home_team}
-      />
-
-      <StatComparisonTable
-        title="Season Average"
-        subtitle="Regular-season average, all games played this season"
-        rows={AVG_STAT_ROWS}
-        fmt={fmtAvg}
-        awayData={awaySeasonAvg}
-        homeData={homeSeasonAvg}
-        awayAbbr={game.away_team}
-        homeAbbr={game.home_team}
-      />
-
-      <StatComparisonTable
-        title="This Game"
-        rows={GAME_STAT_ROWS}
-        fmt={fmtCount}
-        awayData={awayGameStats}
-        homeData={homeGameStats}
-        awayAbbr={game.away_team}
-        homeAbbr={game.home_team}
+        windows={[
+          { label: 'Pre-game', away: awayPregameStats, home: homePregameStats },
+          { label: 'Season', away: awaySeasonStats, home: homeSeasonStats },
+          { label: 'Game', away: awayGameStatRow, home: homeGameStatRow },
+        ]}
       />
 
       <div className="mb-8">
