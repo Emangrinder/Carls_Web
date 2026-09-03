@@ -50,8 +50,8 @@ export default function DivisionNav() {
             const teamAbbrs = (grouped[conf]?.[div] ?? []).sort()
             if (teamAbbrs.length === 0) return null
             return (
-              <div key={div} className="mb-3">
-                <h3 className="mb-1 text-xs font-medium text-neutral-400">{div}</h3>
+              <div key={div} className="mb-3 rounded-md border border-white px-1 pb-1.5 pt-1">
+                <h3 className="mb-1 text-center text-xs font-bold text-neutral-400">{div}</h3>
                 <div className="grid grid-cols-1 gap-1.5">
                   {teamAbbrs.map((abbr) => (
                     <Link key={abbr} to={`/team/${abbr}`} title={abbr}>

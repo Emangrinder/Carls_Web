@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { supabase } from './supabaseClient'
 import { TEAM_COLORS } from './constants'
@@ -243,41 +243,13 @@ function lastNameOnly(fullName) {
   return rest || fullName
 }
 
-// Two independent hover popups: a stats card just ABOVE the chip (number,
-// snap count, two position-specific stats -- for every player, not just
-// injured ones) and a "next up" card just BENEATH it showing the next
-// bench player at that exact slot. Kept as plain absolutely-positioned
-// siblings of the hovered element itself, so there's no coordinate math --
-// they just track whatever they're anchored to.
-function PlayerPopups({ number, snapCount, statLines, nextUp }) {
-  const hasStats = number != null || snapCount != null || statLines.length > 0
-  return (
-    <>
-      {hasStats && (
-        <div className="pointer-events-none absolute bottom-full left-1/2 z-30 mb-1.5 w-max max-w-[170px] -translate-x-1/2 rounded border border-neutral-300 bg-white px-2 py-1.5 text-left text-[11px] leading-tight shadow-lg dark:border-neutral-700 dark:bg-neutral-900">
-          <div className="font-semibold text-neutral-900 dark:text-neutral-100">
-            #{number ?? '—'} · {snapCount ?? '—'} snaps
-          </div>
-          {statLines.map((l) => (
-            <div key={l.label} className="text-neutral-500">
-              {l.label}: <span className="text-neutral-700 dark:text-neutral-300">{l.value}</span>
-            </div>
-          ))}
-        </div>
-      )}
-      {nextUp && (
-        <div className="pointer-events-none absolute top-full left-1/2 z-30 mt-1.5 whitespace-nowrap rounded border border-neutral-300 bg-white px-2 py-1 text-[11px] shadow-lg dark:border-neutral-700 dark:bg-neutral-900">
-          Next: {lastNameOnly(nextUp.player_name)}
-        </div>
-      )}
-    </>
-  )
-}
-
-function PlayerChip({ p, injuryStatus, popupData, findNextUp, onHoverInjured, onUnhoverInjured }) {
-  const [hovered, setHovered] = useState(false)
+// Hovering ANY player (starter or bench) reports itself up to TeamPage via
+// onChipHover, which positions two fixed side panels -- see
+// HoverSidePanels below. Nothing is rendered here for the hover itself:
+// that's the point, hovering never touches this component's own layout.
+function PlayerChip({ p, injuryStatus, onChipHover, onChipUnhover, onHoverInjured, onUnhoverInjured }) {
   const style = INJURY_STATUS_STYLES[injuryStatus]
-  const className = `shrink-0 whitespace-nowrap rounded border px-2 py-1 text-center text-xs hover:opacity-75 ${
+  const className = `block shrink-0 whitespace-nowrap rounded border px-2 py-1 text-center text-xs hover:opacity-75 ${
     style ? style.chip : 'border-neutral-200 dark:border-neutral-800'
   }`
   const inner = (
@@ -291,58 +263,52 @@ function PlayerChip({ p, injuryStatus, popupData, findNextUp, onHoverInjured, on
       </div>
     </>
   )
-  return (
-    <div
-      className="relative shrink-0"
-      onMouseEnter={() => {
-        setHovered(true)
-        if (injuryStatus) onHoverInjured?.(p)
-      }}
-      onMouseLeave={() => {
-        setHovered(false)
-        if (injuryStatus) onUnhoverInjured?.()
-      }}
-    >
-      {p.player_id ? (
-        <Link to={`/player/${p.player_id}`} className={className}>{inner}</Link>
-      ) : p.player_name ? (
-        // Rookies without a gsis_id yet (nflverse hasn't crosswalked them into
-        // `players`) still have college stats -- link by name so PlayerPage
-        // can fall back to a college-only profile instead of no page at all.
-        <Link to={`/player/name:${encodeURIComponent(p.player_name)}`} className={className}>{inner}</Link>
-      ) : (
-        <div className={className}>{inner}</div>
-      )}
-      {hovered && popupData && (
-        <PlayerPopups
-          number={popupData.numberByPlayer.get(p.player_id)}
-          snapCount={snapCountFor(p, popupData)}
-          statLines={computeStatLines(p, popupData)}
-          nextUp={findNextUp(p)}
-        />
-      )}
+  const handleEnter = (e) => {
+    onChipHover(p, e.currentTarget)
+    if (injuryStatus) onHoverInjured?.(p)
+  }
+  const handleLeave = () => {
+    onChipUnhover()
+    if (injuryStatus) onUnhoverInjured?.()
+  }
+  // Rookies without a gsis_id yet (nflverse hasn't crosswalked them into
+  // `players`) still have college stats -- link by name so PlayerPage can
+  // fall back to a college-only profile instead of no page at all.
+  const playerHref = p.player_id
+    ? `/player/${p.player_id}`
+    : p.player_name
+      ? `/player/name:${encodeURIComponent(p.player_name)}`
+      : null
+  return playerHref ? (
+    <Link to={playerHref} className={className} onMouseEnter={handleEnter} onMouseLeave={handleLeave}>
+      {inner}
+    </Link>
+  ) : (
+    <div className={className} onMouseEnter={handleEnter} onMouseLeave={handleLeave}>
+      {inner}
     </div>
   )
 }
 
-// Same hover-popup behavior as PlayerChip, just for the bottom bench-list
-// row's plain-text visual instead of a bordered chip.
-function DepthListItem({ p, injuryStatus, isNextUp, popupData, findNextUp, onHoverInjured, onUnhoverInjured }) {
-  const [hovered, setHovered] = useState(false)
+// Same hover-reporting behavior as PlayerChip, just for the bottom
+// bench-list row's plain-text visual instead of a bordered chip.
+function DepthListItem({ p, injuryStatus, isNextUp, onChipHover, onChipUnhover, onHoverInjured, onUnhoverInjured }) {
   const injuryStyle = INJURY_STATUS_STYLES[injuryStatus]
+  const handleEnter = (e) => {
+    onChipHover(p, e.currentTarget)
+    if (injuryStatus) onHoverInjured?.(p)
+  }
+  const handleLeave = () => {
+    onChipUnhover()
+    if (injuryStatus) onUnhoverInjured?.()
+  }
   return (
     <li
-      className={`relative flex justify-between border-b border-neutral-100 py-1 dark:border-neutral-900 ${
+      className={`flex justify-between border-b border-neutral-100 py-1 dark:border-neutral-900 ${
         isNextUp ? 'rounded bg-blue-50 ring-1 ring-blue-300 dark:bg-blue-950/40 dark:ring-blue-700' : ''
       }`}
-      onMouseEnter={() => {
-        setHovered(true)
-        if (injuryStatus) onHoverInjured?.(p)
-      }}
-      onMouseLeave={() => {
-        setHovered(false)
-        if (injuryStatus) onUnhoverInjured?.()
-      }}
+      onMouseEnter={handleEnter}
+      onMouseLeave={handleLeave}
     >
       <span className="text-neutral-500">
         {p.position_abbr} #{p.rank}
@@ -359,15 +325,65 @@ function DepthListItem({ p, injuryStatus, isNextUp, popupData, findNextUp, onHov
           {p.player_name ?? '—'}
         </span>
       )}
-      {hovered && popupData && (
-        <PlayerPopups
-          number={popupData.numberByPlayer.get(p.player_id)}
-          snapCount={snapCountFor(p, popupData)}
-          statLines={computeStatLines(p, popupData)}
-          nextUp={findNextUp(p)}
-        />
-      )}
     </li>
+  )
+}
+
+// Fixed-position overlay layer for the currently-hovered player's info --
+// stats in the gutter between the left nav and the depth chart, next-up
+// backup in the gutter between the depth chart and the schedule/season
+// stats column. Positioned from the depth-chart column's own measured
+// edges, vertically aligned to the hovered row -- never part of normal
+// document flow, so hovering can never shift or resize the page around
+// it, and it simply unmounts (no fade, no scroll-to) the moment the
+// pointer leaves.
+const STATS_PANEL_WIDTH = 176
+const NEXTUP_PANEL_WIDTH = 144
+
+function HoverSidePanels({ hoverInfo, depthColRef, popupData, findNextUp }) {
+  const colEl = depthColRef.current
+  if (!hoverInfo || !colEl) return null
+  const colRect = colEl.getBoundingClientRect()
+  const { player: p, top, height } = hoverInfo
+  const panelTop = top + height / 2
+  const number = popupData?.numberByPlayer.get(p.player_id)
+  const snapCount = popupData ? snapCountFor(p, popupData) : null
+  const statLines = popupData ? computeStatLines(p, popupData) : []
+  const hasStats = popupData && (number != null || snapCount != null || statLines.length > 0)
+  const nextUp = findNextUp(p)
+
+  // Clamped to the viewport rather than pinned exactly to the column edge --
+  // the gutter to the left (past the nav sidebar) is often narrower than the
+  // panel itself, and a pure edge-anchor would push it off-screen entirely.
+  const statsLeft = Math.max(8, colRect.left - 12 - STATS_PANEL_WIDTH)
+  const nextUpLeft = Math.min(colRect.right + 12, window.innerWidth - NEXTUP_PANEL_WIDTH - 8)
+
+  return (
+    <>
+      {hasStats && (
+        <div
+          className="pointer-events-none fixed z-40 rounded border border-neutral-300 bg-white px-2 py-1.5 text-left text-[11px] leading-tight shadow-lg dark:border-neutral-700 dark:bg-neutral-900"
+          style={{ top: panelTop, left: statsLeft, width: STATS_PANEL_WIDTH, transform: 'translateY(-50%)' }}
+        >
+          <div className="font-semibold text-neutral-900 dark:text-neutral-100">
+            #{number ?? '—'} · {snapCount ?? '—'} snaps
+          </div>
+          {statLines.map((l) => (
+            <div key={l.label} className="text-neutral-500">
+              {l.label}: <span className="text-neutral-700 dark:text-neutral-300">{l.value}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      {nextUp && (
+        <div
+          className="pointer-events-none fixed z-40 whitespace-nowrap rounded border border-neutral-300 bg-white px-2 py-1 text-[11px] shadow-lg dark:border-neutral-700 dark:bg-neutral-900"
+          style={{ top: panelTop, left: nextUpLeft, width: NEXTUP_PANEL_WIDTH, transform: 'translateY(-50%)' }}
+        >
+          Next: {lastNameOnly(nextUp.player_name)}
+        </div>
+      )}
+    </>
   )
 }
 
@@ -447,19 +463,19 @@ function CoachingStaff({ coaches }) {
   )
 }
 
-function StarterRow({ label, players, injuryByPlayerId, popupData, findNextUp, onHoverInjured, onUnhoverInjured }) {
+function StarterRow({ label, players, injuryByPlayerId, onChipHover, onChipUnhover, onHoverInjured, onUnhoverInjured }) {
   if (players.length === 0) return null
   return (
     <div className="mb-3">
       <div className="mb-1 text-xs text-neutral-500">{label}</div>
-      <div className="flex flex-nowrap justify-center gap-2 overflow-x-auto">
+      <div className="flex flex-wrap justify-center gap-2">
         {players.map((p) => (
           <PlayerChip
             key={`${p.position_name}-${p.position_slot}-${p.rank}`}
             p={p}
             injuryStatus={injuryByPlayerId.get(p.player_id)}
-            popupData={popupData}
-            findNextUp={findNextUp}
+            onChipHover={onChipHover}
+            onChipUnhover={onChipUnhover}
             onHoverInjured={onHoverInjured}
             onUnhoverInjured={onUnhoverInjured}
           />
@@ -482,6 +498,16 @@ export default function TeamPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [popupData, setPopupData] = useState(null)
+  const [hoverInfo, setHoverInfo] = useState(null)
+  const depthColRef = useRef(null)
+
+  function handleChipHover(p, el) {
+    const rect = el.getBoundingClientRect()
+    setHoverInfo({ player: p, top: rect.top, height: rect.height })
+  }
+  function handleChipUnhover() {
+    setHoverInfo(null)
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -676,7 +702,7 @@ export default function TeamPage() {
 
       {/* Starters depth chart (left) + schedule/record/season stats (right) */}
       <div className="mb-8 flex flex-col gap-8 lg:flex-row">
-        <div className="lg:w-[620px] lg:shrink-0">
+        <div className="lg:w-[620px] lg:shrink-0" ref={depthColRef}>
           <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-neutral-500">
             2026 Depth Chart
           </h2>
@@ -684,15 +710,15 @@ export default function TeamPage() {
           <div className="mb-4">
             <h3 className="mb-1 text-xs font-bold uppercase text-neutral-400">Starting Offense</h3>
             <StarterRow label="QB" players={qbStarters} injuryByPlayerId={injuryByPlayerId}
-              popupData={popupData} findNextUp={findNextUp}
+              onChipHover={handleChipHover} onChipUnhover={handleChipUnhover}
               onHoverInjured={setHoveredInjuredPlayer}
               onUnhoverInjured={() => setHoveredInjuredPlayer(null)} />
             <StarterRow label="Offensive Line" players={olStarters} injuryByPlayerId={injuryByPlayerId}
-              popupData={popupData} findNextUp={findNextUp}
+              onChipHover={handleChipHover} onChipUnhover={handleChipUnhover}
               onHoverInjured={setHoveredInjuredPlayer}
               onUnhoverInjured={() => setHoveredInjuredPlayer(null)} />
             <StarterRow label="Skill" players={skillStarters} injuryByPlayerId={injuryByPlayerId}
-              popupData={popupData} findNextUp={findNextUp}
+              onChipHover={handleChipHover} onChipUnhover={handleChipUnhover}
               onHoverInjured={setHoveredInjuredPlayer}
               onUnhoverInjured={() => setHoveredInjuredPlayer(null)} />
           </div>
@@ -700,19 +726,19 @@ export default function TeamPage() {
           <div className="mb-4">
             <h3 className="mb-1 text-xs font-bold uppercase text-neutral-400">Starting Defense</h3>
             <StarterRow label="D-Line" players={dlStarters} injuryByPlayerId={injuryByPlayerId}
-              popupData={popupData} findNextUp={findNextUp}
+              onChipHover={handleChipHover} onChipUnhover={handleChipUnhover}
               onHoverInjured={setHoveredInjuredPlayer}
               onUnhoverInjured={() => setHoveredInjuredPlayer(null)} />
             <StarterRow label="Linebackers" players={lbStarters} injuryByPlayerId={injuryByPlayerId}
-              popupData={popupData} findNextUp={findNextUp}
+              onChipHover={handleChipHover} onChipUnhover={handleChipUnhover}
               onHoverInjured={setHoveredInjuredPlayer}
               onUnhoverInjured={() => setHoveredInjuredPlayer(null)} />
             <StarterRow label="Corners" players={cbStarters} injuryByPlayerId={injuryByPlayerId}
-              popupData={popupData} findNextUp={findNextUp}
+              onChipHover={handleChipHover} onChipUnhover={handleChipUnhover}
               onHoverInjured={setHoveredInjuredPlayer}
               onUnhoverInjured={() => setHoveredInjuredPlayer(null)} />
             <StarterRow label="Safeties" players={sStarters} injuryByPlayerId={injuryByPlayerId}
-              popupData={popupData} findNextUp={findNextUp}
+              onChipHover={handleChipHover} onChipUnhover={handleChipUnhover}
               onHoverInjured={setHoveredInjuredPlayer}
               onUnhoverInjured={() => setHoveredInjuredPlayer(null)} />
           </div>
@@ -720,11 +746,11 @@ export default function TeamPage() {
           <div className="mb-2">
             <h3 className="mb-1 text-xs font-bold uppercase text-neutral-400">Special Teams</h3>
             <StarterRow label="Kicking" players={kickingStarters} injuryByPlayerId={injuryByPlayerId}
-              popupData={popupData} findNextUp={findNextUp}
+              onChipHover={handleChipHover} onChipUnhover={handleChipUnhover}
               onHoverInjured={setHoveredInjuredPlayer}
               onUnhoverInjured={() => setHoveredInjuredPlayer(null)} />
             <StarterRow label="Return" players={returnStarters} injuryByPlayerId={injuryByPlayerId}
-              popupData={popupData} findNextUp={findNextUp}
+              onChipHover={handleChipHover} onChipUnhover={handleChipUnhover}
               onHoverInjured={setHoveredInjuredPlayer}
               onUnhoverInjured={() => setHoveredInjuredPlayer(null)} />
           </div>
@@ -824,8 +850,8 @@ export default function TeamPage() {
                   p={p}
                   injuryStatus={injuryByPlayerId.get(p.player_id)}
                   isNextUp={p === nextUpPlayer}
-                  popupData={popupData}
-                  findNextUp={findNextUp}
+                  onChipHover={handleChipHover}
+                  onChipUnhover={handleChipUnhover}
                   onHoverInjured={setHoveredInjuredPlayer}
                   onUnhoverInjured={() => setHoveredInjuredPlayer(null)}
                 />
@@ -836,6 +862,8 @@ export default function TeamPage() {
       </div>
 
       <InjuryLegend />
+
+      <HoverSidePanels hoverInfo={hoverInfo} depthColRef={depthColRef} popupData={popupData} findNextUp={findNextUp} />
     </div>
   )
 }
