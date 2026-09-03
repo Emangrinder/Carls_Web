@@ -28,10 +28,17 @@ SCHEMA_PATH = Path(__file__).resolve().parent / "schema.sql"
 RELEASE_BASE = "https://github.com/nflverse/nflverse-data/releases/download"
 
 
-def download_fresh(url: str, dest: Path) -> Path:
+def download_fresh(url: str, dest: Path):
+    """Returns None (instead of raising) if the file isn't published yet --
+    e.g. a new season's injury reports don't exist until practice reports
+    start in week 1, well after rosters/depth charts are already out."""
     dest.parent.mkdir(parents=True, exist_ok=True)
     print(f"  downloading {url}")
-    subprocess.run(["curl", "-sL", "-o", str(dest), url], check=True)
+    result = subprocess.run(["curl", "-sL", "-f", "-o", str(dest), url])
+    if result.returncode != 0:
+        dest.unlink(missing_ok=True)
+        print(f"  not available yet, skipping: {url}")
+        return None
     return dest
 
 
@@ -53,6 +60,22 @@ def main():
         RAW_DIR / f"injuries_{season}.csv",
     )
 
+    conn = sqlite3.connect(DB_PATH)
+    conn.executescript(SCHEMA_PATH.read_text())
+    cur = conn.cursor()
+    cur.execute("DELETE FROM current_injury_report")
+
+    if csv_path is None:
+        # New season, no injury reports published yet (they start with
+        # week 1 practice reports, well after rosters/depth charts exist).
+        # Leave the table empty rather than falling back to last season's
+        # data, which would misleadingly imply this year's players are hurt.
+        conn.commit()
+        print(f"current_injury_report: 0 players on report (season {season} injury data not published yet)")
+        conn.close()
+        print(f"Done -> {DB_PATH}")
+        return
+
     # Scope to REG weeks 1-18, same reasoning as build_active_roster.py — the raw
     # source also has playoff weeks, whose "latest week" would only cover 2 teams.
     all_rows = list(csv.DictReader(open(csv_path, newline="", encoding="utf-8")))
@@ -65,11 +88,6 @@ def main():
     latest_rows = [r for r in rows if to_int(r["week"]) == latest_week]
     print(f"  {len(all_rows)} total rows in source, {len(rows)} in REG weeks 1-18, "
           f"{len(latest_rows)} in latest such week ({latest_week})")
-
-    conn = sqlite3.connect(DB_PATH)
-    conn.executescript(SCHEMA_PATH.read_text())
-    cur = conn.cursor()
-    cur.execute("DELETE FROM current_injury_report")
 
     as_of = datetime.datetime.now(datetime.timezone.utc).isoformat()
     insert_rows = [

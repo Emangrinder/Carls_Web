@@ -20,7 +20,13 @@ env:
   # Bump this once nflverse starts publishing the new season's data (usually
   # once week 1 rosters/injuries actually exist) -- until then the old
   # season's file is still the most current thing nflverse has published.
-  CURRENT_SEASON: "2025"
+  # Bumped to 2026 on 2026-09-03: roster_weekly_2026 and depth_charts_2026
+  # are both already published (final roster cuts happen before week 1
+  # games), confirmed via a real trade (Cooper Kupp: LA -> SEA) showing up
+  # correctly. injuries_2026 isn't out yet (no practice reports before week
+  # 1) -- build_current_injuries.py now handles that as "0 rows" instead of
+  # crashing, rather than falling back to stale 2025 injury data.
+  CURRENT_SEASON: "2026"
 
 jobs:
   sync:

@@ -82,6 +82,25 @@ def to_text(v):
     return v if v not in (None, "") else None
 
 
+# players.csv and snap_counts.csv use different granularity for the same
+# position (e.g. players.csv's "OT" is snap_counts' "T", players.csv splits
+# LBs into ILB/MLB/OLB while snap_counts just says "LB"). Bucket both sides
+# into the same coarse group so the name+team+position fallback crosswalk
+# below can actually match.
+_POSITION_GROUP_BUCKETS = {
+    "OT": "OL", "T": "OL", "OL": "OL", "G": "OL", "C": "OL",
+    "DE": "DL", "DT": "DL", "NT": "DL", "DL": "DL",
+    "LB": "LB", "OLB": "LB", "ILB": "LB", "MLB": "LB",
+    "CB": "DB", "DB": "DB", "FS": "DB", "S": "DB", "SS": "DB", "SAF": "DB",
+    "RB": "RB", "HB": "RB",
+}
+
+
+def normalize_position_for_match(pos):
+    pos = (pos or "").strip().upper()
+    return _POSITION_GROUP_BUCKETS.get(pos, pos)
+
+
 def count_fg_made_ge(fg_made_list_str, min_yards: int) -> int:
     """nflverse's own fg_made_* distance buckets cap out at fg_made_60_
     ("60 yards or more") — there's no 70+ split in their release, so this
@@ -257,6 +276,13 @@ def main():
     # ------------------------------------------------------------------
     print("Loading players + building pfr_id crosswalk...")
     pfr_id_to_gsis = {}
+    # Fallback for the ~8% of players.csv rows missing pfr_id (real gaps in
+    # nflverse's own reference data, e.g. Alec Anderson) -- snap_counts is
+    # keyed by pfr_id, so without this those players silently get zero snap
+    # rows despite having actually played. (name, team, position) is a safe
+    # enough key within nflverse's own weekly_rosters-derived data to not
+    # need a stricter match.
+    name_team_pos_to_gsis = {}
     players_inserted = set()
 
     def insert_player_from_players_csv(row):
@@ -281,6 +307,13 @@ def main():
         pid = row["gsis_id"]
         if row.get("pfr_id"):
             pfr_id_to_gsis[row["pfr_id"]] = pid
+        if row.get("latest_team") and row.get("position") and row.get("display_name"):
+            key = (
+                row["display_name"].strip().lower(),
+                row["latest_team"],
+                normalize_position_for_match(row["position"]),
+            )
+            name_team_pos_to_gsis[key] = pid
         if pid and pid in relevant_player_ids:
             insert_player_from_players_csv(row)
 
@@ -441,6 +474,12 @@ def main():
         if week is None or not (MIN_WEEK <= week <= MAX_WEEK):
             continue
         gsis_id = pfr_id_to_gsis.get(row["pfr_player_id"])
+        if gsis_id is None:
+            gsis_id = name_team_pos_to_gsis.get((
+                row["player"].strip().lower(),
+                row["team"],
+                normalize_position_for_match(row["position"]),
+            ))
         if gsis_id is None:
             n_snap_unmatched += 1
             continue
