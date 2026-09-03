@@ -6,6 +6,12 @@ import LoadingSpinner from './LoadingSpinner'
 
 const SEASONS = [2026, 2025, 2024]
 const DEFAULT_SEASON = 2025
+// The depth-chart hover card's stats always look back at the most recent
+// *completed* season, independent of the season-toggle above the schedule
+// -- the depth chart itself (from depth_chart_ranks) has no season
+// dimension, it's always "right now," so its stats popup needs a fixed
+// reference season rather than following whichever season tab is active.
+const STATS_SEASON = 2025
 const WEEKS_PART1 = Array.from({ length: 9 }, (_, i) => i + 1) // 1-9
 const WEEKS_PART2 = Array.from({ length: 9 }, (_, i) => i + 10) // 10-18
 const POSTSEASON_LABELS = { WC: 'WC', DIV: 'DIV', CON: 'CONF', SB: 'SB' }
@@ -131,6 +137,104 @@ function isSkillStarter(p) {
   return maxRank != null && p.rank <= maxRank
 }
 
+// Sums the given numeric fields per player_id across every row -- a player
+// traded mid-season has one stat row per team, so a single row lookup
+// would silently miss whatever they did before/after the trade.
+function aggregateRowsByPlayer(rows, fields) {
+  const out = new Map()
+  for (const row of rows) {
+    const acc = out.get(row.player_id) ?? Object.fromEntries(fields.map((f) => [f, 0]))
+    for (const f of fields) acc[f] += row[f] ?? 0
+    out.set(row.player_id, acc)
+  }
+  return out
+}
+
+function fmtStat(n, digits = 0) {
+  return n == null || Number.isNaN(n) ? '—' : n.toFixed(digits)
+}
+
+// The depth chart hover card's two position-specific stats, per the exact
+// formulas requested: prior-season pass yards/game for QBs, team carry/
+// target share for RB/WR/TE, snap-share-vs-the-current-team's-prior-year
+// total for OL (so a trade shows e.g. "800/900" -- their own snaps over
+// this team's total, not their old team's), pressure/tackle/coverage
+// tallies for the front seven and secondary, and simple counting stats
+// for specialists.
+function computeStatLines(p, popupData) {
+  const { offenseByPlayer, defenseByPlayer, stByPlayer, snapByPlayer, shareByPlayer, teamPriorOffenseSnaps } = popupData
+  const off = offenseByPlayer.get(p.player_id)
+  const def = defenseByPlayer.get(p.player_id)
+  const st = stByPlayer.get(p.player_id)
+  const snaps = snapByPlayer.get(p.player_id)
+  const share = shareByPlayer.get(p.player_id)
+  const category = categoryOf(p)
+
+  switch (category) {
+    case 'qb': {
+      const avg = off && off.games ? off.passing_yards / off.games : null
+      return [{ label: `${STATS_SEASON} Pass Yds/G`, value: fmtStat(avg, 1) }]
+    }
+    case 'ol': {
+      const own = snaps?.offense_snaps ?? 0
+      return [{
+        label: `${STATS_SEASON} Snap Share`,
+        value: teamPriorOffenseSnaps ? `${own}/${teamPriorOffenseSnaps}` : '—',
+      }]
+    }
+    case 'skill': {
+      if (p.position_abbr === 'RB') {
+        return [{ label: 'Team Carry %', value: share?.team_rb_carry_pct != null ? `${share.team_rb_carry_pct}%` : '—' }]
+      }
+      if (p.position_abbr === 'WR' || p.position_abbr === 'TE') {
+        return [{ label: 'Team Target %', value: share?.team_target_pct != null ? `${share.team_target_pct}%` : '—' }]
+      }
+      return []
+    }
+    case 'dl': {
+      const val = def ? (def.def_sacks ?? 0) + (def.def_qb_hits ?? 0) + (def.def_tackles_for_loss ?? 0) : null
+      return [{ label: 'Hits+Sacks+TFL', value: fmtStat(val, 1) }]
+    }
+    case 'lb': {
+      const val = def ? (def.def_tackles_solo ?? 0) + (def.def_tackles_with_assist ?? 0) : null
+      return [{ label: 'Tackles', value: fmtStat(val) }]
+    }
+    case 'cb':
+    case 's': {
+      // PD and INT deliberately double-count (an int is technically also a
+      // PD in the raw data, but stacking both values more accurately shows
+      // playmaking impact) -- explicit user call, not an oversight.
+      const val = def
+        ? (def.def_pass_defended ?? 0) + (def.def_interceptions ?? 0) +
+          0.5 * ((def.def_tackles_solo ?? 0) + (def.def_tackles_with_assist ?? 0))
+        : null
+      return [{ label: 'PD+INT+½Tkl', value: fmtStat(val, 1) }]
+    }
+    case 'st': {
+      if (p.position_abbr === 'PK') return [{ label: `${STATS_SEASON} FGs Made`, value: fmtStat(st?.fg_made) }]
+      if (p.position_abbr === 'P') {
+        const avg = st && st.pt_att ? st.pt_yards / st.pt_att : null
+        return [{ label: 'Avg Punt Yds', value: fmtStat(avg, 1) }]
+      }
+      if (p.position_abbr === 'KR') return [{ label: 'Kick Returns', value: fmtStat(st?.kickoff_returns) }]
+      if (p.position_abbr === 'PR') return [{ label: 'Punt Returns', value: fmtStat(st?.punt_returns) }]
+      return []
+    }
+    default:
+      return []
+  }
+}
+
+function snapCountFor(p, popupData) {
+  const snaps = popupData.snapByPlayer.get(p.player_id)
+  if (!snaps) return null
+  const category = categoryOf(p)
+  if (category === 'qb' || category === 'ol' || category === 'skill') return snaps.offense_snaps
+  if (category === 'dl' || category === 'lb' || category === 'cb' || category === 's') return snaps.defense_snaps
+  if (category === 'st') return snaps.st_snaps
+  return null
+}
+
 // Drops just the first token (first name), keeping the rest -- handles
 // suffixes like "Jr."/"III" better than taking only the last token would.
 function lastNameOnly(fullName) {
@@ -139,17 +243,45 @@ function lastNameOnly(fullName) {
   return rest || fullName
 }
 
-function PlayerChip({ p, injuryStatus, onHoverInjured, onUnhoverInjured }) {
-  const style = INJURY_STATUS_STYLES[injuryStatus]
+// Two independent hover popups: a stats card just ABOVE the chip (number,
+// snap count, two position-specific stats -- for every player, not just
+// injured ones) and a "next up" card just BENEATH it showing the next
+// bench player at that exact slot. Kept as plain absolutely-positioned
+// siblings of the hovered element itself, so there's no coordinate math --
+// they just track whatever they're anchored to.
+function PlayerPopups({ number, snapCount, statLines, nextUp }) {
+  const hasStats = number != null || snapCount != null || statLines.length > 0
   return (
-    <Link
-      to={`/player/${p.player_id}`}
-      className={`shrink-0 whitespace-nowrap rounded border px-2 py-1 text-center text-xs hover:opacity-75 ${
-        style ? style.chip : 'border-neutral-200 dark:border-neutral-800'
-      }`}
-      onMouseEnter={injuryStatus ? () => onHoverInjured?.(p) : undefined}
-      onMouseLeave={injuryStatus ? () => onUnhoverInjured?.() : undefined}
-    >
+    <>
+      {hasStats && (
+        <div className="pointer-events-none absolute bottom-full left-1/2 z-30 mb-1.5 w-max max-w-[170px] -translate-x-1/2 rounded border border-neutral-300 bg-white px-2 py-1.5 text-left text-[11px] leading-tight shadow-lg dark:border-neutral-700 dark:bg-neutral-900">
+          <div className="font-semibold text-neutral-900 dark:text-neutral-100">
+            #{number ?? '—'} · {snapCount ?? '—'} snaps
+          </div>
+          {statLines.map((l) => (
+            <div key={l.label} className="text-neutral-500">
+              {l.label}: <span className="text-neutral-700 dark:text-neutral-300">{l.value}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      {nextUp && (
+        <div className="pointer-events-none absolute top-full left-1/2 z-30 mt-1.5 whitespace-nowrap rounded border border-neutral-300 bg-white px-2 py-1 text-[11px] shadow-lg dark:border-neutral-700 dark:bg-neutral-900">
+          Next: {lastNameOnly(nextUp.player_name)}
+        </div>
+      )}
+    </>
+  )
+}
+
+function PlayerChip({ p, injuryStatus, popupData, findNextUp, onHoverInjured, onUnhoverInjured }) {
+  const [hovered, setHovered] = useState(false)
+  const style = INJURY_STATUS_STYLES[injuryStatus]
+  const className = `shrink-0 whitespace-nowrap rounded border px-2 py-1 text-center text-xs hover:opacity-75 ${
+    style ? style.chip : 'border-neutral-200 dark:border-neutral-800'
+  }`
+  const inner = (
+    <>
       <div className="text-[10px] text-neutral-500">
         {p.position_abbr}
         {p.rank > 1 ? p.rank : ''}
@@ -157,7 +289,80 @@ function PlayerChip({ p, injuryStatus, onHoverInjured, onUnhoverInjured }) {
       <div className="font-medium text-neutral-900 dark:text-neutral-100">
         {lastNameOnly(p.player_name)}
       </div>
-    </Link>
+    </>
+  )
+  return (
+    <div
+      className="relative shrink-0"
+      onMouseEnter={() => {
+        setHovered(true)
+        if (injuryStatus) onHoverInjured?.(p)
+      }}
+      onMouseLeave={() => {
+        setHovered(false)
+        if (injuryStatus) onUnhoverInjured?.()
+      }}
+    >
+      {p.player_id ? (
+        <Link to={`/player/${p.player_id}`} className={className}>{inner}</Link>
+      ) : (
+        <div className={className}>{inner}</div>
+      )}
+      {hovered && popupData && (
+        <PlayerPopups
+          number={popupData.numberByPlayer.get(p.player_id)}
+          snapCount={snapCountFor(p, popupData)}
+          statLines={computeStatLines(p, popupData)}
+          nextUp={findNextUp(p)}
+        />
+      )}
+    </div>
+  )
+}
+
+// Same hover-popup behavior as PlayerChip, just for the bottom bench-list
+// row's plain-text visual instead of a bordered chip.
+function DepthListItem({ p, injuryStatus, isNextUp, popupData, findNextUp, onHoverInjured, onUnhoverInjured }) {
+  const [hovered, setHovered] = useState(false)
+  const injuryStyle = INJURY_STATUS_STYLES[injuryStatus]
+  return (
+    <li
+      className={`relative flex justify-between border-b border-neutral-100 py-1 dark:border-neutral-900 ${
+        isNextUp ? 'rounded bg-blue-50 ring-1 ring-blue-300 dark:bg-blue-950/40 dark:ring-blue-700' : ''
+      }`}
+      onMouseEnter={() => {
+        setHovered(true)
+        if (injuryStatus) onHoverInjured?.(p)
+      }}
+      onMouseLeave={() => {
+        setHovered(false)
+        if (injuryStatus) onUnhoverInjured?.()
+      }}
+    >
+      <span className="text-neutral-500">
+        {p.position_abbr} #{p.rank}
+      </span>
+      {p.player_id ? (
+        <Link
+          to={`/player/${p.player_id}`}
+          className={`hover:underline ${injuryStyle ? injuryStyle.text : 'text-neutral-900 dark:text-neutral-100'}`}
+        >
+          {p.player_name ?? '—'}
+        </Link>
+      ) : (
+        <span className={injuryStyle ? injuryStyle.text : 'text-neutral-900 dark:text-neutral-100'}>
+          {p.player_name ?? '—'}
+        </span>
+      )}
+      {hovered && popupData && (
+        <PlayerPopups
+          number={popupData.numberByPlayer.get(p.player_id)}
+          snapCount={snapCountFor(p, popupData)}
+          statLines={computeStatLines(p, popupData)}
+          nextUp={findNextUp(p)}
+        />
+      )}
+    </li>
   )
 }
 
@@ -216,7 +421,7 @@ function GameCell({ teamAbbr, game, byeLabel }) {
   )
 }
 
-function StarterRow({ label, players, injuryByPlayerId, onHoverInjured, onUnhoverInjured }) {
+function StarterRow({ label, players, injuryByPlayerId, popupData, findNextUp, onHoverInjured, onUnhoverInjured }) {
   if (players.length === 0) return null
   return (
     <div className="mb-3">
@@ -227,6 +432,8 @@ function StarterRow({ label, players, injuryByPlayerId, onHoverInjured, onUnhove
             key={`${p.position_name}-${p.position_slot}-${p.rank}`}
             p={p}
             injuryStatus={injuryByPlayerId.get(p.player_id)}
+            popupData={popupData}
+            findNextUp={findNextUp}
             onHoverInjured={onHoverInjured}
             onUnhoverInjured={onUnhoverInjured}
           />
@@ -247,6 +454,7 @@ export default function TeamPage() {
   const [hoveredInjuredPlayer, setHoveredInjuredPlayer] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [popupData, setPopupData] = useState(null)
 
   useEffect(() => {
     let cancelled = false
@@ -283,6 +491,52 @@ export default function TeamPage() {
       cancelled = true
     }
   }, [teamAbbr, season])
+
+  // Hover-card stats: fixed to STATS_SEASON regardless of the season toggle
+  // above (see the constant's comment), so this is a separate fetch keyed
+  // on the depth chart's own player list rather than on `season`.
+  const depthChartPlayerIdsKey = [...new Set(depthChart.map((p) => p.player_id).filter(Boolean))].sort().join(',')
+
+  useEffect(() => {
+    const playerIds = depthChartPlayerIdsKey ? depthChartPlayerIdsKey.split(',') : []
+    if (playerIds.length === 0) {
+      setPopupData(null)
+      return
+    }
+    let cancelled = false
+
+    Promise.all([
+      supabase.from('players').select('player_id, jersey_number').in('player_id', playerIds),
+      supabase.from('player_season_offense_stats').select('*').in('player_id', playerIds).eq('season', STATS_SEASON),
+      supabase.from('player_season_defense_stats').select('*').in('player_id', playerIds).eq('season', STATS_SEASON),
+      supabase.from('player_season_special_teams_stats').select('*').in('player_id', playerIds).eq('season', STATS_SEASON),
+      supabase.from('player_season_snap_counts').select('*').in('player_id', playerIds).eq('season', STATS_SEASON),
+      supabase.from('player_season_share_stats').select('*').in('player_id', playerIds).eq('season', STATS_SEASON),
+      supabase.from('team_game_stats').select('offense_snaps').eq('team', teamAbbr).eq('season', STATS_SEASON),
+    ]).then(([playersRes, offenseRes, defenseRes, stRes, snapRes, shareRes, teamGamesRes]) => {
+      if (cancelled) return
+      if (playersRes.error || offenseRes.error || defenseRes.error || stRes.error || snapRes.error || shareRes.error || teamGamesRes.error) {
+        return
+      }
+      const numberByPlayer = new Map(playersRes.data.map((r) => [r.player_id, r.jersey_number]))
+      const offenseByPlayer = aggregateRowsByPlayer(offenseRes.data, ['games', 'passing_yards'])
+      const defenseByPlayer = aggregateRowsByPlayer(defenseRes.data, [
+        'def_sacks', 'def_qb_hits', 'def_tackles_for_loss', 'def_tackles_solo',
+        'def_tackles_with_assist', 'def_pass_defended', 'def_interceptions',
+      ])
+      const stByPlayer = aggregateRowsByPlayer(stRes.data, ['fg_made', 'pt_yards', 'pt_att', 'kickoff_returns', 'punt_returns'])
+      const snapByPlayer = aggregateRowsByPlayer(snapRes.data, ['offense_snaps', 'defense_snaps', 'st_snaps'])
+      // Percentages, not counts -- summing across a mid-season trade's two
+      // team rows wouldn't mean anything, so just keep one (last) row.
+      const shareByPlayer = new Map(shareRes.data.map((r) => [r.player_id, r]))
+      const teamPriorOffenseSnaps = teamGamesRes.data.reduce((acc, g) => acc + (g.offense_snaps ?? 0), 0)
+      setPopupData({ numberByPlayer, offenseByPlayer, defenseByPlayer, stByPlayer, snapByPlayer, shareByPlayer, teamPriorOffenseSnaps })
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [teamAbbr, depthChartPlayerIdsKey])
 
   if (loading) return <LoadingSpinner full />
   if (error) return <p className="p-6 text-sm text-red-500">Error: {error}</p>
@@ -326,18 +580,19 @@ export default function TeamPage() {
     return acc
   }, {})
 
-  // "Next up" for a hovered injured starter: the lowest-ranked bench player
-  // (not an already-visible starter) in that exact same position slot.
-  const nextUpPlayer = hoveredInjuredPlayer
-    ? depthRest
-        .filter(
-          (p) =>
-            p.position_name === hoveredInjuredPlayer.position_name &&
-            p.position_slot === hoveredInjuredPlayer.position_slot &&
-            p.rank > hoveredInjuredPlayer.rank,
-        )
-        .sort((a, b) => a.rank - b.rank)[0]
-    : null
+  // "Next up" for any player: the lowest-ranked player still below them at
+  // that exact same position slot -- used both for the hover popup (every
+  // player, healthy or not) and the bottom depth list's highlight (still
+  // gated to injured/questionable starters only, see hoveredInjuredPlayer).
+  function findNextUp(p) {
+    if (!p) return null
+    return (
+      depthChart
+        .filter((x) => x.position_name === p.position_name && x.position_slot === p.position_slot && x.rank > p.rank)
+        .sort((a, b) => a.rank - b.rank)[0] ?? null
+    )
+  }
+  const nextUpPlayer = findNextUp(hoveredInjuredPlayer)
 
   const colors = TEAM_COLORS[team.team_abbr]
   const record = stats && (
@@ -400,12 +655,15 @@ export default function TeamPage() {
           <div className="mb-4">
             <h3 className="mb-1 text-xs font-bold uppercase text-neutral-400">Starting Offense</h3>
             <StarterRow label="QB" players={qbStarters} injuryByPlayerId={injuryByPlayerId}
+              popupData={popupData} findNextUp={findNextUp}
               onHoverInjured={setHoveredInjuredPlayer}
               onUnhoverInjured={() => setHoveredInjuredPlayer(null)} />
             <StarterRow label="Offensive Line" players={olStarters} injuryByPlayerId={injuryByPlayerId}
+              popupData={popupData} findNextUp={findNextUp}
               onHoverInjured={setHoveredInjuredPlayer}
               onUnhoverInjured={() => setHoveredInjuredPlayer(null)} />
             <StarterRow label="Skill" players={skillStarters} injuryByPlayerId={injuryByPlayerId}
+              popupData={popupData} findNextUp={findNextUp}
               onHoverInjured={setHoveredInjuredPlayer}
               onUnhoverInjured={() => setHoveredInjuredPlayer(null)} />
           </div>
@@ -413,15 +671,19 @@ export default function TeamPage() {
           <div className="mb-4">
             <h3 className="mb-1 text-xs font-bold uppercase text-neutral-400">Starting Defense</h3>
             <StarterRow label="D-Line" players={dlStarters} injuryByPlayerId={injuryByPlayerId}
+              popupData={popupData} findNextUp={findNextUp}
               onHoverInjured={setHoveredInjuredPlayer}
               onUnhoverInjured={() => setHoveredInjuredPlayer(null)} />
             <StarterRow label="Linebackers" players={lbStarters} injuryByPlayerId={injuryByPlayerId}
+              popupData={popupData} findNextUp={findNextUp}
               onHoverInjured={setHoveredInjuredPlayer}
               onUnhoverInjured={() => setHoveredInjuredPlayer(null)} />
             <StarterRow label="Corners" players={cbStarters} injuryByPlayerId={injuryByPlayerId}
+              popupData={popupData} findNextUp={findNextUp}
               onHoverInjured={setHoveredInjuredPlayer}
               onUnhoverInjured={() => setHoveredInjuredPlayer(null)} />
             <StarterRow label="Safeties" players={sStarters} injuryByPlayerId={injuryByPlayerId}
+              popupData={popupData} findNextUp={findNextUp}
               onHoverInjured={setHoveredInjuredPlayer}
               onUnhoverInjured={() => setHoveredInjuredPlayer(null)} />
           </div>
@@ -429,9 +691,11 @@ export default function TeamPage() {
           <div className="mb-2">
             <h3 className="mb-1 text-xs font-bold uppercase text-neutral-400">Special Teams</h3>
             <StarterRow label="Kicking" players={kickingStarters} injuryByPlayerId={injuryByPlayerId}
+              popupData={popupData} findNextUp={findNextUp}
               onHoverInjured={setHoveredInjuredPlayer}
               onUnhoverInjured={() => setHoveredInjuredPlayer(null)} />
             <StarterRow label="Return" players={returnStarters} injuryByPlayerId={injuryByPlayerId}
+              popupData={popupData} findNextUp={findNextUp}
               onHoverInjured={setHoveredInjuredPlayer}
               onUnhoverInjured={() => setHoveredInjuredPlayer(null)} />
           </div>
@@ -523,28 +787,18 @@ export default function TeamPage() {
           <div key={group}>
             <h4 className="mb-1 text-xs font-semibold text-neutral-500">{group}</h4>
             <ul className="text-sm">
-              {players.map((p) => {
-                const injuryStyle = INJURY_STATUS_STYLES[injuryByPlayerId.get(p.player_id)]
-                const isNextUp = p === nextUpPlayer
-                return (
-                  <li
-                    key={`${p.position_name}-${p.position_slot}-${p.rank}`}
-                    className={`flex justify-between border-b border-neutral-100 py-1 dark:border-neutral-900 ${
-                      isNextUp ? 'rounded bg-blue-50 ring-1 ring-blue-300 dark:bg-blue-950/40 dark:ring-blue-700' : ''
-                    }`}
-                  >
-                    <span className="text-neutral-500">
-                      {p.position_abbr} #{p.rank}
-                    </span>
-                    <Link
-                      to={`/player/${p.player_id}`}
-                      className={`hover:underline ${injuryStyle ? injuryStyle.text : 'text-neutral-900 dark:text-neutral-100'}`}
-                    >
-                      {p.player_name ?? '—'}
-                    </Link>
-                  </li>
-                )
-              })}
+              {players.map((p) => (
+                <DepthListItem
+                  key={`${p.position_name}-${p.position_slot}-${p.rank}`}
+                  p={p}
+                  injuryStatus={injuryByPlayerId.get(p.player_id)}
+                  isNextUp={p === nextUpPlayer}
+                  popupData={popupData}
+                  findNextUp={findNextUp}
+                  onHoverInjured={setHoveredInjuredPlayer}
+                  onUnhoverInjured={() => setHoveredInjuredPlayer(null)}
+                />
+              ))}
             </ul>
           </div>
         ))}

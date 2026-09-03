@@ -566,7 +566,7 @@ export default function PlayerPage() {
     setError(null)
 
     Promise.all([
-      supabase.from('players').select('*').eq('player_id', playerId).single(),
+      supabase.from('players').select('*').eq('player_id', playerId).maybeSingle(),
       supabase.from('depth_chart_ranks').select('*').eq('player_id', playerId).order('rank'),
       supabase.from('current_injury_report').select('*').eq('player_id', playerId).maybeSingle(),
       supabase
