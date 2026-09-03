@@ -2,6 +2,8 @@ import { HashRouter, Routes, Route } from 'react-router-dom'
 import TeamRibbon from './TeamRibbon'
 import TeamStatsTable from './TeamStatsTable'
 import TeamPage from './TeamPage'
+import MatchesPage from './MatchesPage'
+import GamePage from './GamePage'
 import DivisionNav from './DivisionNav'
 import Footer from './Footer'
 
@@ -15,6 +17,8 @@ function App() {
           <div className="min-w-0 flex-1">
             <Routes>
               <Route path="/" element={<TeamStatsTable />} />
+              <Route path="/matches" element={<MatchesPage />} />
+              <Route path="/matches/:gameId" element={<GamePage />} />
               <Route path="/team/:teamAbbr" element={<TeamPage />} />
             </Routes>
           </div>
