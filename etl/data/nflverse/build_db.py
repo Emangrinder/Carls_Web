@@ -168,10 +168,16 @@ def main():
         )
 
     # ------------------------------------------------------------------
-    # 3. games (season, REG, weeks 1-18) + coaches
+    # 3. games (season, REG weeks 1-18 + postseason WC/DIV/CON/SB) + coaches
+    #
+    # Postseason games are included here (schedule/results only) even
+    # though player-level stat tables below stay REG-only -- their own
+    # in_scope() checks season_type == "REG" independently of
+    # game_ids_in_scope, so this doesn't leak postseason stats in.
     # ------------------------------------------------------------------
     print("Loading games + coaches...")
     coach_id_by_name = {}
+    POSTSEASON_TYPES = {"WC", "DIV", "CON", "SB"}
 
     def get_coach_id(name):
         if not name:
@@ -184,10 +190,16 @@ def main():
 
     game_ids_in_scope = set()
     for row in read_csv_rows(games_csv):
-        if row["season"] != str(season) or row["game_type"] != "REG":
+        if row["season"] != str(season):
             continue
         week = to_int(row["week"])
-        if week is None or not (MIN_WEEK <= week <= MAX_WEEK):
+        if row["game_type"] == "REG":
+            if week is None or not (MIN_WEEK <= week <= MAX_WEEK):
+                continue
+        elif row["game_type"] in POSTSEASON_TYPES:
+            if week is None:
+                continue
+        else:
             continue
         game_ids_in_scope.add(row["game_id"])
         home_coach_id = get_coach_id(to_text(row["home_coach"]))

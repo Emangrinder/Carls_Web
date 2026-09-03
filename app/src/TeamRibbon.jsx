@@ -1,13 +1,9 @@
 import { Link } from 'react-router-dom'
+import { CURRENT_TEAMS } from './constants'
 
 // Alphabetical by abbreviation — good enough for a rotating strip; revisit
 // if we ever want true alphabetical-by-city ordering.
-const TEAMS = [
-  'ARI', 'ATL', 'BAL', 'BUF', 'CAR', 'CHI', 'CIN', 'CLE', 'DAL', 'DEN',
-  'DET', 'GB', 'HOU', 'IND', 'JAX', 'KC', 'LA', 'LAC', 'LV', 'MIA',
-  'MIN', 'NE', 'NO', 'NYG', 'NYJ', 'PHI', 'PIT', 'SEA', 'SF', 'TB',
-  'TEN', 'WAS',
-]
+const TEAMS = [...CURRENT_TEAMS].sort()
 
 function Logo({ team, className = '' }) {
   return (
