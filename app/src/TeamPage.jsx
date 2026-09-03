@@ -45,6 +45,13 @@ const STAT_ROWS = [
       `${fmtCount(s.pass_td_allowed)}/${fmtCount(s.rush_td_allowed)}`,
     ],
   },
+  {
+    label: 'Sacks/QB Hits',
+    render: (s) => [
+      `${fmtCount(s.sacks)}/${fmtCount(s.qb_hits)}`,
+      `${fmtCount(s.sacks_allowed)}/${fmtCount(s.qb_hits_allowed)}`,
+    ],
+  },
   { label: 'Punts Avg', render: (s) => [fmtAvg(s.punts_avg), fmtAvg(s.punts_allowed_avg)] },
   { label: 'Punt Return %', render: (s) => [fmtPct(s.punt_return_pct_for), fmtPct(s.punt_return_pct_against)] },
   { label: 'Kick Return Yds Avg', render: (s) => [fmtAvg(s.kick_return_yards_avg), fmtAvg(s.kick_return_yards_allowed_avg)] },
@@ -59,14 +66,15 @@ const POSITION_CATEGORY = {
   QB: 'qb',
   LT: 'ol', LG: 'ol', C: 'ol', RG: 'ol', RT: 'ol',
   RB: 'skill', WR: 'skill', TE: 'skill', FB: 'skill',
-  LDE: 'dl', RDE: 'dl', DE: 'dl', NT: 'dl', DT: 'dl',
+  LDE: 'dl', RDE: 'dl', DE: 'dl', NT: 'dl', DT: 'dl', LDT: 'dl', RDT: 'dl',
   WLB: 'lb', SLB: 'lb', MLB: 'lb', LILB: 'lb', RILB: 'lb', ILB: 'lb', OLB: 'lb',
   LCB: 'cb', RCB: 'cb', CB: 'cb', NB: 'cb',
   FS: 's', SS: 's', S: 's',
   PK: 'st', P: 'st', KR: 'st', PR: 'st', LS: 'st', H: 'st',
 }
 const OL_ORDER = ['LT', 'LG', 'C', 'RG', 'RT']
-const ST_STARTER_ABBRS = ['PK', 'P', 'KR', 'PR']
+const KICKING_STARTER_ABBRS = ['PK', 'P']
+const RETURN_STARTER_ABBRS = ['KR', 'PR']
 // Skill positions where more than one depth slot is part of the base
 // personnel package, not just the #1 -- e.g. most offenses roll with 2+ WRs.
 const SKILL_STARTER_MAX_RANK = { RB: 2, WR: 3, TE: 2, FB: 1 }
@@ -81,6 +89,14 @@ function isSkillStarter(p) {
   return maxRank != null && p.rank <= maxRank
 }
 
+// Drops just the first token (first name), keeping the rest -- handles
+// suffixes like "Jr."/"III" better than taking only the last token would.
+function lastNameOnly(fullName) {
+  if (!fullName) return '—'
+  const rest = fullName.split(' ').slice(1).join(' ')
+  return rest || fullName
+}
+
 function PlayerChip({ p }) {
   return (
     <div className="shrink-0 whitespace-nowrap rounded border border-neutral-200 px-2 py-1 text-center text-xs dark:border-neutral-800">
@@ -89,7 +105,7 @@ function PlayerChip({ p }) {
         {p.rank > 1 ? p.rank : ''}
       </div>
       <div className="font-medium text-neutral-900 dark:text-neutral-100">
-        {p.player_name ?? '—'}
+        {lastNameOnly(p.player_name)}
       </div>
     </div>
   )
@@ -139,8 +155,8 @@ function GameCell({ teamAbbr, game, byeLabel }) {
 function StarterRow({ label, players }) {
   if (players.length === 0) return null
   return (
-    <div className="mb-2 flex items-center gap-2">
-      <span className="w-24 shrink-0 text-xs text-neutral-500">{label}</span>
+    <div className="mb-3">
+      <div className="mb-1 text-xs text-neutral-500">{label}</div>
       <div className="flex flex-nowrap gap-2 overflow-x-auto">
         {players.map((p) => (
           <PlayerChip key={`${p.position_name}-${p.position_slot}-${p.rank}`} p={p} />
@@ -221,12 +237,13 @@ export default function TeamPage() {
   const lbStarters = rank1.filter((p) => categoryOf(p) === 'lb')
   const cbStarters = rank1.filter((p) => categoryOf(p) === 'cb')
   const sStarters = rank1.filter((p) => categoryOf(p) === 's')
-  const stStarters = rank1.filter((p) => ST_STARTER_ABBRS.includes(p.position_abbr))
+  const kickingStarters = rank1.filter((p) => KICKING_STARTER_ABBRS.includes(p.position_abbr))
+  const returnStarters = rank1.filter((p) => RETURN_STARTER_ABBRS.includes(p.position_abbr))
 
   const shownInStarters = new Set([
     ...qbStarters, ...olStarters, ...skillStarters,
     ...dlStarters, ...lbStarters, ...cbStarters, ...sStarters,
-    ...stStarters,
+    ...kickingStarters, ...returnStarters,
   ])
   const depthRest = depthChart.filter((p) => !shownInStarters.has(p))
   const depthByGroup = depthRest.reduce((acc, row) => {
@@ -294,7 +311,8 @@ export default function TeamPage() {
 
           <div className="mb-2">
             <h3 className="mb-1 text-xs font-bold uppercase text-neutral-400">Special Teams</h3>
-            <StarterRow label="Starters" players={stStarters} />
+            <StarterRow label="Kicking" players={kickingStarters} />
+            <StarterRow label="Return" players={returnStarters} />
           </div>
         </div>
 
@@ -302,7 +320,7 @@ export default function TeamPage() {
           <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-neutral-500">
             Schedule
           </h2>
-          <div className="mb-2 flex flex-wrap gap-2">
+          <div className="mb-2 grid grid-cols-9 gap-2">
             {WEEKS_PART1.map((week) => (
               <GameCell
                 key={week}
@@ -312,7 +330,7 @@ export default function TeamPage() {
               />
             ))}
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="grid grid-cols-9 gap-2">
             {WEEKS_PART2.map((week) => (
               <GameCell
                 key={week}
@@ -341,15 +359,14 @@ export default function TeamPage() {
             </>
           )}
 
-          {stats && (
-            <p className="mb-2 mt-4 text-sm text-neutral-500">
-              {stats.wins}-{stats.losses}
-              {stats.ties ? `-${stats.ties}` : ''} ({fmtDiff(stats.win_diff)})
-            </p>
-          )}
-
-          <h2 className="mb-2 mt-4 text-sm font-semibold uppercase tracking-wide text-neutral-500">
+          <h2 className="mb-2 mt-4 flex items-baseline gap-2 text-sm font-semibold uppercase tracking-wide text-neutral-500">
             Season Stats
+            {stats && (
+              <span className="text-xs font-normal normal-case text-neutral-400">
+                {stats.wins}-{stats.losses}
+                {stats.ties ? `-${stats.ties}` : ''} ({fmtDiff(stats.win_diff)})
+              </span>
+            )}
           </h2>
           <table className="w-full border-collapse text-sm">
             <thead>

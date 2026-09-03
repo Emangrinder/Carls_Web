@@ -29,10 +29,10 @@ export default function DivisionNav() {
   }, {})
 
   return (
-    <nav className="hidden w-48 shrink-0 border-r border-neutral-200 px-3 py-4 lg:block dark:border-neutral-800">
+    <nav className="hidden w-16 shrink-0 border-r border-neutral-200 px-2 py-4 lg:block dark:border-neutral-800">
       {CONFERENCES.map((conf) => (
         <div key={conf} className="mb-6">
-          <h2 className="mb-2 text-xs font-bold uppercase tracking-wide text-neutral-500">
+          <h2 className="mb-2 text-sm font-bold uppercase tracking-wide text-neutral-500">
             {conf}
           </h2>
           {DIVISION_ORDER.map((div) => {
@@ -47,7 +47,7 @@ export default function DivisionNav() {
                       <img
                         src={`${import.meta.env.BASE_URL}logos/${abbr}.png`}
                         alt={abbr}
-                        className="h-6 w-6 object-contain"
+                        className="h-9 w-9 object-contain"
                       />
                     </Link>
                   ))}
