@@ -39,13 +39,13 @@ function spreadGradient(spreadLine) {
   return { backgroundImage: `linear-gradient(to right, ${awaySideColor}, ${homeSideColor})` }
 }
 
-function GameTile({ game }) {
+function GameTile({ game, className = '' }) {
   const played = game.home_score != null && game.away_score != null
   return (
     <Link
       to={`/matches/${game.game_id}`}
       style={spreadGradient(game.spread_line)}
-      className="flex shrink-0 flex-col items-center gap-1 rounded-md border border-neutral-200 px-3 py-1.5 hover:opacity-80 dark:border-neutral-800"
+      className={`flex shrink-0 flex-col items-center gap-1 rounded-md border border-neutral-200 px-3 py-1.5 hover:opacity-80 dark:border-neutral-800 ${className}`}
     >
       <div className="flex items-center gap-1.5 text-xs font-medium text-neutral-700 dark:text-neutral-300">
         <Logo team={game.away_team} />
@@ -107,10 +107,20 @@ export default function TeamRibbon() {
       >
         Matches
       </Link>
-      <div className="flex min-w-0 flex-1 gap-2 overflow-x-auto">
-        {games.map((g) => (
-          <GameTile key={g.game_id} game={g} />
-        ))}
+      <div
+        className="min-w-0 flex-1 overflow-hidden"
+        style={{
+          maskImage:
+            'linear-gradient(to right, transparent, black 48px, black calc(100% - 48px), transparent)',
+          WebkitMaskImage:
+            'linear-gradient(to right, transparent, black 48px, black calc(100% - 48px), transparent)',
+        }}
+      >
+        <div className="flex w-max animate-ribbon">
+          {[...games, ...games].map((g, i) => (
+            <GameTile key={`${g.game_id}-${i}`} game={g} className="mr-2" />
+          ))}
+        </div>
       </div>
     </div>
   )

@@ -7,3 +7,16 @@
 body {
   margin: 0;
 }
+
+@keyframes ribbon-scroll {
+  from {
+    transform: translateX(-50%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+.animate-ribbon {
+  animation: ribbon-scroll 40s linear infinite;
+}
