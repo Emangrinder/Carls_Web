@@ -56,6 +56,7 @@ jobs:
           python3 etl/data/player_management/active/build_active_roster.py --season "$CURRENT_SEASON"
           python3 etl/data/player_management/active/build_current_injuries.py --season "$CURRENT_SEASON"
           python3 etl/data/player_management/history/depth_charts/build_depth_charts.py --season "$CURRENT_SEASON"
+          python3 etl/data/player_management/active/build_coaching_staff.py --season "$CURRENT_SEASON"
 
       - name: Build trades ledger (all-time, no season arg)
         run: python3 etl/data/player_management/history/trades/build_trades.py

@@ -71,6 +71,18 @@ CREATE TABLE IF NOT EXISTS depth_chart_ranks (
     PRIMARY KEY (team, position_name, position_slot, rank)
 );
 
+-- Manually curated, updated occasionally (not scraped nightly) -- head
+-- coach/OC/DC turn over maybe a dozen times league-wide per year, so a
+-- daily automated feed isn't worth the crosswalk complexity. Source is
+-- data/reference/coaches_<year>.json; see build_coaching_staff.py.
+CREATE TABLE IF NOT EXISTS current_coaching_staff (
+    team        TEXT,
+    role        TEXT,     -- HC / OC / DC
+    coach_name  TEXT,
+    since_year  INTEGER,
+    PRIMARY KEY (team, role)
+);
+
 -- ESPN's depth chart pulled DIRECTLY (build_espn_depth_chart.py), kept in
 -- its own table rather than merged into depth_chart_ranks above — see that
 -- script's docstring for why (same underlying vendor as nflverse_espn,

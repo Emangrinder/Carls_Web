@@ -152,6 +152,9 @@ TABLE_SPECS = [
     ("trades", ["trade_id", "season", "trade_date", "gave_team", "received_team", "pick_season",
                "pick_round", "pick_number", "conditional", "pfr_id", "pfr_name", "player_id"],
      [(DB_DIR / "player_management_history.db", "trades")], None),
+
+    ("current_coaching_staff", ["team", "role", "coach_name", "since_year"],
+     [(DB_DIR / "player_management_active.db", "current_coaching_staff")], None),
 ]
 
 PLAYER_ID_COLUMN_BY_TABLE = {
@@ -180,6 +183,7 @@ PK_COLUMNS = {
     "injuries": ["season", "week", "player_id"],
     "depth_chart_history": ["dt", "team", "position_name", "position_slot", "rank"],
     "trades": ["trade_id", "gave_team", "received_team", "pick_season", "pick_round", "pfr_id"],
+    "current_coaching_staff": ["team", "role"],
 }
 
 

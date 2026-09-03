@@ -1,0 +1,578 @@
+{
+  "ARI": {
+    "dc": {
+      "name": "Nick Rallis",
+      "since": "2023"
+    },
+    "hc_wikipedia": {
+      "name": "Mike LaFleur",
+      "since": "2026"
+    },
+    "oc": {
+      "name": "Nathaniel Hackett",
+      "since": "2026"
+    },
+    "st": {
+      "name": "Michael Ghobrial",
+      "since": "2026"
+    }
+  },
+  "ATL": {
+    "dc": {
+      "name": "Jeff Ulbrich",
+      "since": "2025"
+    },
+    "hc_wikipedia": {
+      "name": "Kevin Stefanski",
+      "since": "2026"
+    },
+    "oc": {
+      "name": "Tommy Rees",
+      "since": "2026"
+    },
+    "st": {
+      "name": "Craig Aukerman",
+      "since": "2026"
+    }
+  },
+  "BAL": {
+    "dc": {
+      "name": "Anthony Weaver",
+      "since": "2026"
+    },
+    "hc_wikipedia": {
+      "name": "Jesse Minter",
+      "since": "2026"
+    },
+    "oc": {
+      "name": "Declan Doyle",
+      "since": "2026"
+    },
+    "st": {
+      "name": "Anthony Levine",
+      "since": "2026"
+    }
+  },
+  "BUF": {
+    "dc": {
+      "name": "Jim Leonhard",
+      "since": "2026"
+    },
+    "hc_wikipedia": {
+      "name": "Joe Brady",
+      "since": "2026"
+    },
+    "oc": {
+      "name": "Pete Carmichael Jr.",
+      "since": "2026"
+    },
+    "st": {
+      "name": "Jeff Rodgers",
+      "since": "2026"
+    }
+  },
+  "CAR": {
+    "dc": {
+      "name": "Ejiro Evero",
+      "since": "2023"
+    },
+    "hc_wikipedia": {
+      "name": "Dave Canales",
+      "since": "2024"
+    },
+    "oc": {
+      "name": "Brad Idzik",
+      "since": "2024"
+    },
+    "st": {
+      "name": "Tracy Smith",
+      "since": "2024"
+    }
+  },
+  "CHI": {
+    "dc": {
+      "name": "Dennis Allen",
+      "since": "2025"
+    },
+    "hc_wikipedia": {
+      "name": "Ben Johnson",
+      "since": "2025"
+    },
+    "oc": {
+      "name": "Press Taylor",
+      "since": "2026"
+    },
+    "st": {
+      "name": "Richard Hightower",
+      "since": "2022"
+    }
+  },
+  "CIN": {
+    "dc": {
+      "name": "Al Golden",
+      "since": "2025"
+    },
+    "hc_wikipedia": {
+      "name": "Zac Taylor",
+      "since": "2019"
+    },
+    "oc": {
+      "name": "Dan Pitcher",
+      "since": "2024"
+    },
+    "st": {
+      "name": "Darrin Simmons",
+      "since": "2003"
+    }
+  },
+  "CLE": {
+    "dc": {
+      "name": "Mike Rutenberg",
+      "since": "2026"
+    },
+    "hc_wikipedia": {
+      "name": "Todd Monken",
+      "since": "2026"
+    },
+    "oc": {
+      "name": "Travis Switzer",
+      "since": "2026"
+    },
+    "st": {
+      "name": "Byron Storer",
+      "since": "2026"
+    }
+  },
+  "DAL": {
+    "dc": {
+      "name": "Christian Parker",
+      "since": "2026"
+    },
+    "hc_wikipedia": {
+      "name": "Brian Schottenheimer",
+      "since": "2025"
+    },
+    "oc": {
+      "name": "Klayton Adams",
+      "since": "2025"
+    },
+    "st": {
+      "name": "Nick Sorensen",
+      "since": "2025"
+    }
+  },
+  "DEN": {
+    "dc": {
+      "name": "Vance Joseph",
+      "since": "2023"
+    },
+    "hc_wikipedia": {
+      "name": "Sean Payton",
+      "since": "2023"
+    },
+    "oc": {
+      "name": "Davis Webb",
+      "since": "2026"
+    },
+    "st": {
+      "name": "Darren Rizzi",
+      "since": "2025"
+    }
+  },
+  "DET": {
+    "dc": {
+      "name": "Kelvin Sheppard",
+      "since": "2025"
+    },
+    "hc_wikipedia": {
+      "name": "Dan Campbell",
+      "since": "2021"
+    },
+    "oc": {
+      "name": "Drew Petzing",
+      "since": "2026"
+    },
+    "st": {
+      "name": "Dave Fipp",
+      "since": "2021"
+    }
+  },
+  "GB": {
+    "dc": {
+      "name": "Jonathan Gannon",
+      "since": "2026"
+    },
+    "hc_wikipedia": {
+      "name": "Matt LaFleur",
+      "since": "2019"
+    },
+    "oc": {
+      "name": "Adam Stenavich",
+      "since": "2022"
+    },
+    "st": {
+      "name": "Cameron Achord",
+      "since": "2026"
+    }
+  },
+  "HOU": {
+    "dc": {
+      "name": "Matt Burke",
+      "since": "2023"
+    },
+    "hc_wikipedia": {
+      "name": "DeMeco Ryans",
+      "since": "2023"
+    },
+    "oc": {
+      "name": "Nick Caley",
+      "since": "2025"
+    },
+    "st": {
+      "name": "Frank Ross",
+      "since": "2021"
+    }
+  },
+  "IND": {
+    "dc": {
+      "name": "Lou Anarumo",
+      "since": "2025"
+    },
+    "hc_wikipedia": {
+      "name": "Shane Steichen",
+      "since": "2023"
+    },
+    "oc": {
+      "name": "Jim Bob Cooter",
+      "since": "2023"
+    },
+    "st": {
+      "name": "Brian Mason",
+      "since": "2023"
+    }
+  },
+  "JAX": {
+    "dc": {
+      "name": "Anthony Campanile",
+      "since": "2025"
+    },
+    "hc_wikipedia": {
+      "name": "Liam Coen",
+      "since": "2025"
+    },
+    "oc": {
+      "name": "Grant Udinski",
+      "since": "2025"
+    },
+    "st": {
+      "name": "Heath Farwell",
+      "since": "2022"
+    }
+  },
+  "KC": {
+    "dc": {
+      "name": "Steve Spagnuolo",
+      "since": "2019"
+    },
+    "hc_wikipedia": {
+      "name": "Andy Reid",
+      "since": "2013"
+    },
+    "oc": {
+      "name": "Eric Bieniemy",
+      "since": "2026"
+    },
+    "st": {
+      "name": "Dave Toub",
+      "since": "2013"
+    }
+  },
+  "LAC": {
+    "dc": {
+      "name": "Chris O'Leary",
+      "since": "2026"
+    },
+    "hc_wikipedia": {
+      "name": "Jim Harbaugh",
+      "since": "2024"
+    },
+    "oc": {
+      "name": "Mike McDaniel",
+      "since": "2026"
+    },
+    "st": {
+      "name": "Ryan Ficken",
+      "since": "2022"
+    }
+  },
+  "LAR": {
+    "dc": {
+      "name": "Chris Shula",
+      "since": "2024"
+    },
+    "hc_wikipedia": {
+      "name": "Sean McVay",
+      "since": "2017"
+    },
+    "oc": {
+      "name": "Nathan Scheelhaase",
+      "since": "2026"
+    },
+    "st": {
+      "name": "Ray Ventrone",
+      "since": "2026"
+    }
+  },
+  "LV": {
+    "dc": {
+      "name": "Rob Leonard",
+      "since": "2026"
+    },
+    "hc_wikipedia": {
+      "name": "Klint Kubiak",
+      "since": "2026"
+    },
+    "oc": {
+      "name": "Andrew Janocko",
+      "since": "2026"
+    },
+    "st": {
+      "name": "Joe DeCamillis",
+      "since": "2026"
+    }
+  },
+  "MIA": {
+    "dc": {
+      "name": "Sean Duggan",
+      "since": "2026"
+    },
+    "hc_wikipedia": {
+      "name": "Jeff Hafley",
+      "since": "2026"
+    },
+    "oc": {
+      "name": "Bobby Slowik",
+      "since": "2026"
+    },
+    "st": {
+      "name": "Chris Tabor",
+      "since": "2026"
+    }
+  },
+  "MIN": {
+    "dc": {
+      "name": "Brian Flores",
+      "since": "2023"
+    },
+    "hc_wikipedia": {
+      "name": "Kevin O'Connell",
+      "since": "2022"
+    },
+    "oc": {
+      "name": "Wes Phillips",
+      "since": "2022"
+    },
+    "st": {
+      "name": "Matt Daniels",
+      "since": "2022"
+    }
+  },
+  "NE": {
+    "dc": {
+      "name": "Zak Kuhr",
+      "since": "2026"
+    },
+    "hc_wikipedia": {
+      "name": "Mike Vrabel",
+      "since": "2025"
+    },
+    "oc": {
+      "name": "Josh McDaniels",
+      "since": "2025"
+    },
+    "st": {
+      "name": "Jeremy Springer",
+      "since": "2024"
+    }
+  },
+  "NO": {
+    "dc": {
+      "name": "Brandon Staley",
+      "since": "2025"
+    },
+    "hc_wikipedia": {
+      "name": "Kellen Moore",
+      "since": "2025"
+    },
+    "oc": {
+      "name": "Doug Nussmeier",
+      "since": "2025"
+    },
+    "st": {
+      "name": "Phil Galiano",
+      "since": "2025"
+    }
+  },
+  "NYG": {
+    "dc": {
+      "name": "Dennard Wilson",
+      "since": "2026"
+    },
+    "hc_wikipedia": {
+      "name": "John Harbaugh",
+      "since": "2026"
+    },
+    "oc": {
+      "name": "Matt Nagy",
+      "since": "2026"
+    },
+    "st": {
+      "name": "Chris Horton",
+      "since": "2026"
+    }
+  },
+  "NYJ": {
+    "dc": {
+      "name": "Brian Duker",
+      "since": "2026"
+    },
+    "hc_wikipedia": {
+      "name": "Aaron Glenn",
+      "since": "2025"
+    },
+    "oc": {
+      "name": "Frank Reich",
+      "since": "2026"
+    },
+    "st": {
+      "name": "Chris Banjo",
+      "since": "2025"
+    }
+  },
+  "PHI": {
+    "dc": {
+      "name": "Vic Fangio",
+      "since": "2024"
+    },
+    "hc_wikipedia": {
+      "name": "Nick Sirianni",
+      "since": "2021"
+    },
+    "oc": {
+      "name": "Sean Mannion",
+      "since": "2026"
+    },
+    "st": {
+      "name": "Michael Clay",
+      "since": "2021"
+    }
+  },
+  "PIT": {
+    "dc": {
+      "name": "Patrick Graham",
+      "since": "2026"
+    },
+    "hc_wikipedia": {
+      "name": "Mike McCarthy",
+      "since": "2026"
+    },
+    "oc": {
+      "name": "Brian Angelichio",
+      "since": "2026"
+    },
+    "st": {
+      "name": "Danny Crossman",
+      "since": "2026"
+    }
+  },
+  "SEA": {
+    "dc": {
+      "name": "Aden Durde",
+      "since": "2024"
+    },
+    "hc_wikipedia": {
+      "name": "Mike Macdonald",
+      "since": "2024"
+    },
+    "oc": {
+      "name": "Brian Fleury",
+      "since": "2026"
+    },
+    "st": {
+      "name": "Jay Harbaugh",
+      "since": "2024"
+    }
+  },
+  "SF": {
+    "dc": {
+      "name": "Raheem Morris",
+      "since": "2026"
+    },
+    "hc_wikipedia": {
+      "name": "Kyle Shanahan",
+      "since": "2017"
+    },
+    "oc": {
+      "name": "Klay Kubiak",
+      "since": "2025"
+    },
+    "st": {
+      "name": "Brant Boyer",
+      "since": "2025"
+    }
+  },
+  "TB": {
+    "dc": {
+      "name": "Todd Bowles[a]",
+      "since": "2019"
+    },
+    "hc_wikipedia": {
+      "name": "Todd Bowles",
+      "since": "2022"
+    },
+    "oc": {
+      "name": "Zac Robinson",
+      "since": "2026"
+    },
+    "st": {
+      "name": "Danny Smith",
+      "since": "2026"
+    }
+  },
+  "TEN": {
+    "dc": {
+      "name": "Gus Bradley",
+      "since": "2026"
+    },
+    "hc_wikipedia": {
+      "name": "Robert Saleh",
+      "since": "2026"
+    },
+    "oc": {
+      "name": "Brian Daboll",
+      "since": "2026"
+    },
+    "st": {
+      "name": "John Fassel",
+      "since": "2025"
+    }
+  },
+  "WAS": {
+    "dc": {
+      "name": "Daronte Jones",
+      "since": "2026"
+    },
+    "hc_wikipedia": {
+      "name": "Dan Quinn",
+      "since": "2024"
+    },
+    "oc": {
+      "name": "David Blough",
+      "since": "2026"
+    },
+    "st": {
+      "name": "Larry Izzo",
+      "since": "2024"
+    }
+  }
+}

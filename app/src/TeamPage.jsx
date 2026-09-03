@@ -421,6 +421,27 @@ function GameCell({ teamAbbr, game, byeLabel }) {
   )
 }
 
+const COACH_ROLE_ORDER = ['HC', 'OC', 'DC']
+const COACH_ROLE_LABEL = { HC: 'Head Coach', OC: 'Off. Coordinator', DC: 'Def. Coordinator' }
+
+function CoachingStaff({ coaches }) {
+  if (coaches.length === 0) return null
+  const sorted = [...coaches].sort((a, b) => COACH_ROLE_ORDER.indexOf(a.role) - COACH_ROLE_ORDER.indexOf(b.role))
+  return (
+    <div className="mb-4 flex flex-wrap gap-x-6 gap-y-2">
+      {sorted.map((c) => (
+        <div key={c.role}>
+          <div className="text-xs text-neutral-500">{COACH_ROLE_LABEL[c.role] ?? c.role}</div>
+          <div className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
+            {c.coach_name}
+            {c.since_year && <span className="ml-1 font-normal text-neutral-400">(since {c.since_year})</span>}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function StarterRow({ label, players, injuryByPlayerId, popupData, findNextUp, onHoverInjured, onUnhoverInjured }) {
   if (players.length === 0) return null
   return (
@@ -451,6 +472,7 @@ export default function TeamPage() {
   const [depthChart, setDepthChart] = useState([])
   const [injuries, setInjuries] = useState([])
   const [games, setGames] = useState([])
+  const [coaches, setCoaches] = useState([])
   const [hoveredInjuredPlayer, setHoveredInjuredPlayer] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -472,9 +494,10 @@ export default function TeamPage() {
         .eq('season', season)
         .or(`home_team.eq.${teamAbbr},away_team.eq.${teamAbbr}`)
         .order('week'),
-    ]).then(([teamRes, statsRes, depthRes, injuriesRes, gamesRes]) => {
+      supabase.from('current_coaching_staff').select('*').eq('team', teamAbbr),
+    ]).then(([teamRes, statsRes, depthRes, injuriesRes, gamesRes, coachesRes]) => {
       if (cancelled) return
-      const err = teamRes.error || statsRes.error || depthRes.error || injuriesRes.error || gamesRes.error
+      const err = teamRes.error || statsRes.error || depthRes.error || injuriesRes.error || gamesRes.error || coachesRes.error
       if (err) {
         setError(err.message)
       } else {
@@ -483,6 +506,7 @@ export default function TeamPage() {
         setDepthChart(depthRes.data)
         setInjuries(injuriesRes.data)
         setGames(gamesRes.data)
+        setCoaches(coachesRes.data)
       }
       setLoading(false)
     })
@@ -702,6 +726,8 @@ export default function TeamPage() {
         </div>
 
         <div className="min-w-0 flex-1">
+          <CoachingStaff coaches={coaches} />
+
           <h2 className="mb-2 flex items-baseline gap-2 text-sm font-semibold uppercase tracking-wide text-neutral-500">
             Schedule
             {record}
