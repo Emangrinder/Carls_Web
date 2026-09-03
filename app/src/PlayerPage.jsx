@@ -122,9 +122,9 @@ function SeasonStatTable({ title, rows, columns }) {
             </tr>
           </thead>
           <tbody>
-            {rows.map((row) => (
+            {rows.map((row, idx) => (
               <tr
-                key={row.season}
+                key={idx}
                 className={`border-b border-neutral-100 dark:border-neutral-900 ${
                   row.isTotal ? 'font-semibold text-neutral-900 dark:text-neutral-100' : ''
                 }`}
@@ -211,6 +211,18 @@ const RETURNS_COLUMNS = [
   { header: 'KR Yds', render: (r) => fmtNum(r.kickoff_return_yards) },
 ]
 
+// nflverse's `players.position` uses generic O-line codes (OT/G/C/T/OL),
+// unlike depth_chart_ranks' side-specific abbreviations (LT/LG/C/RG/RT).
+const OL_POSITIONS = new Set(['OT', 'G', 'C', 'T', 'OL', 'LT', 'RT', 'LG', 'RG'])
+const OL_DEPTH_ABBRS = new Set(['LT', 'LG', 'C', 'RG', 'RT'])
+const OL_COLUMNS = [
+  { header: 'Team', render: (r) => r.team ?? '—' },
+  { header: 'Snaps', render: (r) => fmtNum(r.snaps) },
+  { header: 'Snap %', render: (r) => (r.teamOffenseSnaps ? `${((r.snaps / r.teamOffenseSnaps) * 100).toFixed(1)}%` : '—') },
+  { header: 'Team Sacks Allowed', render: (r) => fmtNum(r.sacksAllowed) },
+  { header: 'Team QB Hits Allowed', render: (r) => fmtNum(r.qbHitsAllowed) },
+]
+
 const COLLEGE_FIELDS = [
   'rush_att', 'rush_yds', 'rush_td', 'targets', 'receptions', 'rec_yds', 'rec_td',
   'pass_comp', 'pass_att', 'pass_yds', 'pass_td', 'pass_int',
@@ -260,6 +272,8 @@ export default function PlayerPage() {
   const [specialTeamsRows, setSpecialTeamsRows] = useState([])
   const [collegeSeasons, setCollegeSeasons] = useState([])
   const [collegeRoster, setCollegeRoster] = useState(null)
+  const [snapSeasons, setSnapSeasons] = useState([])
+  const [teamSeasonStats, setTeamSeasonStats] = useState([])
   const [teams, setTeams] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -299,6 +313,7 @@ export default function PlayerPage() {
         .order('season', { ascending: false })
         .limit(1)
         .maybeSingle(),
+      supabase.from('player_season_snap_counts').select('*').eq('player_id', playerId).order('season'),
       supabase.from('teams').select('team_abbr, team_name').in('team_abbr', CURRENT_TEAMS),
     ]).then(
       ([
@@ -310,6 +325,7 @@ export default function PlayerPage() {
         specialRes,
         collegeSeasonsRes,
         collegeRosterRes,
+        snapSeasonsRes,
         teamsRes,
       ]) => {
         if (cancelled) return
@@ -322,21 +338,45 @@ export default function PlayerPage() {
           specialRes.error ||
           collegeSeasonsRes.error ||
           collegeRosterRes.error ||
+          snapSeasonsRes.error ||
           teamsRes.error
         if (err) {
           setError(err.message)
-        } else {
-          setPlayer(playerRes.data)
-          setDepthChart(depthRes.data)
-          setInjury(injuryRes.data)
-          setOffenseRows(offenseRes.data)
-          setDefenseRows(defenseRes.data)
-          setSpecialTeamsRows(specialRes.data)
-          setCollegeSeasons(collegeSeasonsRes.data)
-          setCollegeRoster(collegeRosterRes.data)
-          setTeams(teamsRes.data)
+          setLoading(false)
+          return
         }
-        setLoading(false)
+        setPlayer(playerRes.data)
+        setDepthChart(depthRes.data)
+        setInjury(injuryRes.data)
+        setOffenseRows(offenseRes.data)
+        setDefenseRows(defenseRes.data)
+        setSpecialTeamsRows(specialRes.data)
+        setCollegeSeasons(collegeSeasonsRes.data)
+        setCollegeRoster(collegeRosterRes.data)
+        setSnapSeasons(snapSeasonsRes.data)
+        setTeams(teamsRes.data)
+
+        // Team-level context (offensive snaps run, sacks/QB hits allowed) for
+        // whichever (team, season) pairs this player actually has snap
+        // counts in -- fetched as a follow-up query since we don't know the
+        // pairs until the snap-count rows above come back.
+        const involvedTeams = [...new Set(snapSeasonsRes.data.map((r) => r.team))]
+        const involvedSeasons = [...new Set(snapSeasonsRes.data.map((r) => r.season))]
+        if (involvedTeams.length === 0) {
+          setLoading(false)
+          return
+        }
+        supabase
+          .from('team_season_stats')
+          .select('team, season, offense_snaps_avg, games_played, sacks_allowed, qb_hits_allowed')
+          .in('team', involvedTeams)
+          .in('season', involvedSeasons)
+          .then(({ data, error: teamStatsError }) => {
+            if (cancelled) return
+            if (teamStatsError) setError(teamStatsError.message)
+            else setTeamSeasonStats(data)
+            setLoading(false)
+          })
       },
     )
 
@@ -375,6 +415,51 @@ export default function PlayerPage() {
     () => bySeasonWithCareerTotal(collegeSeasons, (r) => r.season, COLLEGE_FIELDS),
     [collegeSeasons],
   )
+
+  const isOffensiveLine =
+    OL_POSITIONS.has(player?.position) ||
+    depthChart.some((p) => OL_DEPTH_ABBRS.has(p.position_abbr))
+
+  const teamSeasonStatsByKey = useMemo(
+    () => new Map(teamSeasonStats.map((s) => [`${s.team}-${s.season}`, s])),
+    [teamSeasonStats],
+  )
+  const olSeasons = useMemo(() => {
+    const seasonRows = snapSeasons
+      .filter((s) => (s.offense_snaps ?? 0) > 0)
+      .map((s) => {
+        const teamStats = teamSeasonStatsByKey.get(`${s.team}-${s.season}`)
+        const teamOffenseSnaps = teamStats
+          ? Math.round(teamStats.offense_snaps_avg * teamStats.games_played)
+          : null
+        return {
+          season: s.season,
+          games: s.games,
+          team: s.team,
+          snaps: s.offense_snaps,
+          teamOffenseSnaps,
+          sacksAllowed: teamStats?.sacks_allowed ?? null,
+          qbHitsAllowed: teamStats?.qb_hits_allowed ?? null,
+        }
+      })
+    if (seasonRows.length === 0) return []
+    const totalSnaps = seasonRows.reduce((sum, r) => sum + r.snaps, 0)
+    const totalTeamOffenseSnaps = seasonRows.reduce((sum, r) => sum + (r.teamOffenseSnaps ?? 0), 0)
+    const totalSacksAllowed = seasonRows.reduce((sum, r) => sum + (r.sacksAllowed ?? 0), 0)
+    const totalQbHitsAllowed = seasonRows.reduce((sum, r) => sum + (r.qbHitsAllowed ?? 0), 0)
+    const career = {
+      season: 'Career',
+      games: seasonRows.reduce((sum, r) => sum + r.games, 0),
+      team: null,
+      snaps: totalSnaps,
+      teamOffenseSnaps: totalTeamOffenseSnaps || null,
+      sacksAllowed: totalSacksAllowed,
+      qbHitsAllowed: totalQbHitsAllowed,
+      isTotal: true,
+    }
+    return [...seasonRows, career]
+  }, [snapSeasons, teamSeasonStatsByKey])
+  const hasOL = isOffensiveLine && olSeasons.length > 0
 
   const hasPassing = passingSeasons.some((r) => (r.attempts ?? 0) > 0)
   const hasRushRec = rushRecSeasons.some((r) => (r.carries ?? 0) > 0 || (r.targets ?? 0) > 0)
@@ -484,9 +569,10 @@ export default function PlayerPage() {
 
       {/* NFL career */}
       <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-neutral-500">NFL Career</h2>
-      {!hasPassing && !hasRushRec && !hasDefense && !hasKicking && !hasPunting && !hasReturns && (
+      {!hasOL && !hasPassing && !hasRushRec && !hasDefense && !hasKicking && !hasPunting && !hasReturns && (
         <p className="mb-6 text-sm text-neutral-400">No NFL stats on record.</p>
       )}
+      {hasOL && <SeasonStatTable title="Offensive Line" rows={olSeasons} columns={OL_COLUMNS} />}
       {hasPassing && <SeasonStatTable title="Passing" rows={passingSeasons} columns={PASSING_COLUMNS} />}
       {hasRushRec && <SeasonStatTable title="Rushing & Receiving" rows={rushRecSeasons} columns={RUSH_REC_COLUMNS} />}
       {hasDefense && <SeasonStatTable title="Defense" rows={defenseSeasons} columns={DEFENSE_COLUMNS} />}
