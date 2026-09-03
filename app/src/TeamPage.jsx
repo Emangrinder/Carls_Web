@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { supabase } from './supabaseClient'
 import { TEAM_COLORS } from './constants'
@@ -329,41 +329,42 @@ function DepthListItem({ p, injuryStatus, isNextUp, onChipHover, onChipUnhover, 
   )
 }
 
-// Fixed-position overlay layer for the currently-hovered player's info --
-// stats in the gutter between the left nav and the depth chart, next-up
-// backup in the gutter between the depth chart and the schedule/season
-// stats column. Positioned from the depth-chart column's own measured
-// edges, vertically aligned to the hovered row -- never part of normal
-// document flow, so hovering can never shift or resize the page around
-// it, and it simply unmounts (no fade, no scroll-to) the moment the
-// pointer leaves.
+// Fixed-position overlay layer for the currently-hovered player: a stats
+// card directly ABOVE the chip, a "next up" bubble directly BENEATH it.
+// Both are anchored to that one chip's own measured rect (not the column),
+// horizontally clamped to the viewport so they can't run off-screen, and
+// vertically they sit on opposite sides of the chip so they can never
+// overlap each other. Never part of normal document flow -- hovering can't
+// shift or resize the page -- and it unmounts the instant the pointer
+// leaves, no fade, no scroll-to.
 const STATS_PANEL_WIDTH = 176
 const NEXTUP_PANEL_WIDTH = 144
 
-function HoverSidePanels({ hoverInfo, depthColRef, popupData, findNextUp }) {
-  const colEl = depthColRef.current
-  if (!hoverInfo || !colEl) return null
-  const colRect = colEl.getBoundingClientRect()
-  const { player: p, top, height } = hoverInfo
-  const panelTop = top + height / 2
+function clampedLeft(centerX, width) {
+  return Math.min(Math.max(8, centerX - width / 2), window.innerWidth - width - 8)
+}
+
+function HoverSidePanels({ hoverInfo, popupData, findNextUp }) {
+  if (!hoverInfo) return null
+  const { player: p, rect } = hoverInfo
+  const centerX = rect.left + rect.width / 2
   const number = popupData?.numberByPlayer.get(p.player_id)
   const snapCount = popupData ? snapCountFor(p, popupData) : null
   const statLines = popupData ? computeStatLines(p, popupData) : []
   const hasStats = popupData && (number != null || snapCount != null || statLines.length > 0)
   const nextUp = findNextUp(p)
 
-  // Clamped to the viewport rather than pinned exactly to the column edge --
-  // the gutter to the left (past the nav sidebar) is often narrower than the
-  // panel itself, and a pure edge-anchor would push it off-screen entirely.
-  const statsLeft = Math.max(8, colRect.left - 12 - STATS_PANEL_WIDTH)
-  const nextUpLeft = Math.min(colRect.right + 12, window.innerWidth - NEXTUP_PANEL_WIDTH - 8)
-
   return (
     <>
       {hasStats && (
         <div
           className="pointer-events-none fixed z-40 rounded border border-neutral-300 bg-white px-2 py-1.5 text-left text-[11px] leading-tight shadow-lg dark:border-neutral-700 dark:bg-neutral-900"
-          style={{ top: panelTop, left: statsLeft, width: STATS_PANEL_WIDTH, transform: 'translateY(-50%)' }}
+          style={{
+            left: clampedLeft(centerX, STATS_PANEL_WIDTH),
+            width: STATS_PANEL_WIDTH,
+            top: Math.max(56, rect.top - 8),
+            transform: 'translateY(-100%)',
+          }}
         >
           <div className="font-semibold text-neutral-900 dark:text-neutral-100">
             #{number ?? '—'} · {snapCount ?? '—'} snaps
@@ -378,7 +379,7 @@ function HoverSidePanels({ hoverInfo, depthColRef, popupData, findNextUp }) {
       {nextUp && (
         <div
           className="pointer-events-none fixed z-40 whitespace-nowrap rounded border border-neutral-300 bg-white px-2 py-1 text-[11px] shadow-lg dark:border-neutral-700 dark:bg-neutral-900"
-          style={{ top: panelTop, left: nextUpLeft, width: NEXTUP_PANEL_WIDTH, transform: 'translateY(-50%)' }}
+          style={{ left: clampedLeft(centerX, NEXTUP_PANEL_WIDTH), width: NEXTUP_PANEL_WIDTH, top: rect.bottom + 8 }}
         >
           Next: {lastNameOnly(nextUp.player_name)}
         </div>
@@ -463,24 +464,33 @@ function CoachingStaff({ coaches }) {
   )
 }
 
-function StarterRow({ label, players, injuryByPlayerId, onChipHover, onChipUnhover, onHoverInjured, onUnhoverInjured }) {
-  if (players.length === 0) return null
+// `rows` (an array of player-arrays) renders as separate stacked lines under
+// one shared label -- e.g. Skill splits true starters from the WR2/WR3/RB2
+// rotational depth so 7 chips aren't crammed into a single row. Plain
+// `players` is shorthand for a single-row group.
+function StarterRow({ label, players, rows, injuryByPlayerId, onChipHover, onChipUnhover, onHoverInjured, onUnhoverInjured }) {
+  const chipRows = rows ?? [players]
+  if (chipRows.every((row) => row.length === 0)) return null
   return (
     <div className="mb-3">
       <div className="mb-1 text-xs text-neutral-500">{label}</div>
-      <div className="flex flex-wrap justify-center gap-2">
-        {players.map((p) => (
-          <PlayerChip
-            key={`${p.position_name}-${p.position_slot}-${p.rank}`}
-            p={p}
-            injuryStatus={injuryByPlayerId.get(p.player_id)}
-            onChipHover={onChipHover}
-            onChipUnhover={onChipUnhover}
-            onHoverInjured={onHoverInjured}
-            onUnhoverInjured={onUnhoverInjured}
-          />
-        ))}
-      </div>
+      {chipRows.map((row, i) =>
+        row.length === 0 ? null : (
+          <div key={i} className={`flex flex-wrap justify-center gap-2 ${i > 0 ? 'mt-2' : ''}`}>
+            {row.map((p) => (
+              <PlayerChip
+                key={`${p.position_name}-${p.position_slot}-${p.rank}`}
+                p={p}
+                injuryStatus={injuryByPlayerId.get(p.player_id)}
+                onChipHover={onChipHover}
+                onChipUnhover={onChipUnhover}
+                onHoverInjured={onHoverInjured}
+                onUnhoverInjured={onUnhoverInjured}
+              />
+            ))}
+          </div>
+        ),
+      )}
     </div>
   )
 }
@@ -499,11 +509,9 @@ export default function TeamPage() {
   const [error, setError] = useState(null)
   const [popupData, setPopupData] = useState(null)
   const [hoverInfo, setHoverInfo] = useState(null)
-  const depthColRef = useRef(null)
 
   function handleChipHover(p, el) {
-    const rect = el.getBoundingClientRect()
-    setHoverInfo({ player: p, top: rect.top, height: rect.height })
+    setHoverInfo({ player: p, rect: el.getBoundingClientRect() })
   }
   function handleChipUnhover() {
     setHoverInfo(null)
@@ -616,6 +624,11 @@ export default function TeamPage() {
       const orderDiff = SKILL_ORDER.indexOf(a.position_abbr) - SKILL_ORDER.indexOf(b.position_abbr)
       return orderDiff !== 0 ? orderDiff : a.rank - b.rank
     })
+  // Two tiers: true starters (rank 1) on their own row, the rotational
+  // WR2/WR3/RB2/TE2 depth below them -- 7 chips crammed into one row was
+  // cramped, and the split doubles as "who's actually starting" at a glance.
+  const skillStartersRow1 = skillStarters.filter((p) => p.rank === 1)
+  const skillStartersRow2 = skillStarters.filter((p) => p.rank > 1)
   const dlStarters = sortByFieldOrder(rank1.filter((p) => categoryOf(p) === 'dl'), DL_ORDER)
   const lbStarters = sortByFieldOrder(rank1.filter((p) => categoryOf(p) === 'lb'), LB_ORDER)
   const cbStarters = sortByFieldOrder(rank1.filter((p) => categoryOf(p) === 'cb'), CB_ORDER)
@@ -702,7 +715,7 @@ export default function TeamPage() {
 
       {/* Starters depth chart (left) + schedule/record/season stats (right) */}
       <div className="mb-8 flex flex-col gap-8 lg:flex-row">
-        <div className="lg:w-[620px] lg:shrink-0" ref={depthColRef}>
+        <div className="lg:w-[620px] lg:shrink-0">
           <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-neutral-500">
             2026 Depth Chart
           </h2>
@@ -717,7 +730,7 @@ export default function TeamPage() {
               onChipHover={handleChipHover} onChipUnhover={handleChipUnhover}
               onHoverInjured={setHoveredInjuredPlayer}
               onUnhoverInjured={() => setHoveredInjuredPlayer(null)} />
-            <StarterRow label="Skill" players={skillStarters} injuryByPlayerId={injuryByPlayerId}
+            <StarterRow label="Skill" rows={[skillStartersRow1, skillStartersRow2]} injuryByPlayerId={injuryByPlayerId}
               onChipHover={handleChipHover} onChipUnhover={handleChipUnhover}
               onHoverInjured={setHoveredInjuredPlayer}
               onUnhoverInjured={() => setHoveredInjuredPlayer(null)} />
@@ -863,7 +876,7 @@ export default function TeamPage() {
 
       <InjuryLegend />
 
-      <HoverSidePanels hoverInfo={hoverInfo} depthColRef={depthColRef} popupData={popupData} findNextUp={findNextUp} />
+      <HoverSidePanels hoverInfo={hoverInfo} popupData={popupData} findNextUp={findNextUp} />
     </div>
   )
 }

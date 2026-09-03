@@ -41,7 +41,7 @@ export default function DivisionNav() {
       {CONFERENCES.map((conf) => (
         <div
           key={conf}
-          className={`mb-6 rounded-lg border px-1.5 pb-2 pt-1.5 ${CONFERENCE_BORDER[conf] ?? 'border-neutral-300 dark:border-neutral-700'}`}
+          className={`mb-6 rounded-lg border px-1.5 pb-3 pt-1.5 ${CONFERENCE_BORDER[conf] ?? 'border-neutral-300 dark:border-neutral-700'}`}
         >
           <h2 className={`mb-2 text-center text-base font-bold uppercase tracking-wide ${CONFERENCE_TEXT[conf] ?? 'text-neutral-500'}`}>
             {conf}
@@ -50,7 +50,7 @@ export default function DivisionNav() {
             const teamAbbrs = (grouped[conf]?.[div] ?? []).sort()
             if (teamAbbrs.length === 0) return null
             return (
-              <div key={div} className="mb-3 rounded-md border border-white px-1 pb-1.5 pt-1">
+              <div key={div} className="mb-3 last:mb-0">
                 <h3 className="mb-1 text-center text-xs font-bold text-neutral-400">{div}</h3>
                 <div className="grid grid-cols-1 gap-1.5">
                   {teamAbbrs.map((abbr) => (
