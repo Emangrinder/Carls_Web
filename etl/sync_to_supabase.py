@@ -238,9 +238,11 @@ def main():
                 valid_player_ids = {r[pid_idx] for r in final_rows if r[pid_idx]}
 
     print("Refreshing materialized views...")
+    # Order matters: team_share_stats depends on team_season_stats AND on
+    # the player_season_* views, so it must refresh last.
     for view in ["team_game_stats", "team_season_stats", "player_season_offense_stats",
                  "player_season_defense_stats", "player_season_special_teams_stats",
-                 "player_season_snap_counts"]:
+                 "player_season_snap_counts", "team_share_stats"]:
         run_psql(f"REFRESH MATERIALIZED VIEW {view};")
 
     print("Done.")
