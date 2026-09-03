@@ -9,6 +9,10 @@ const CONFERENCE_TEXT = {
   AFC: 'text-red-600 dark:text-red-400',
   NFC: 'text-blue-600 dark:text-blue-400',
 }
+const CONFERENCE_BORDER = {
+  AFC: 'border-red-600 dark:border-red-400',
+  NFC: 'border-blue-600 dark:border-blue-400',
+}
 
 export default function DivisionNav() {
   const [teams, setTeams] = useState([])
@@ -35,8 +39,11 @@ export default function DivisionNav() {
   return (
     <nav className="hidden w-16 shrink-0 border-r border-neutral-200 px-2 py-4 lg:block dark:border-neutral-800">
       {CONFERENCES.map((conf) => (
-        <div key={conf} className="mb-6">
-          <h2 className={`mb-2 text-base font-bold uppercase tracking-wide ${CONFERENCE_TEXT[conf] ?? 'text-neutral-500'}`}>
+        <div
+          key={conf}
+          className={`mb-6 rounded-lg border px-1.5 pb-2 pt-1.5 ${CONFERENCE_BORDER[conf] ?? 'border-neutral-300 dark:border-neutral-700'}`}
+        >
+          <h2 className={`mb-2 text-center text-base font-bold uppercase tracking-wide ${CONFERENCE_TEXT[conf] ?? 'text-neutral-500'}`}>
             {conf}
           </h2>
           {DIVISION_ORDER.map((div) => {

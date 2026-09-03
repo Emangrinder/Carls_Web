@@ -61,7 +61,7 @@ const TABLES = {
         sortMode: 'sum',
         sortFields: ['pass_defended', 'def_ints'],
         stats: [
-          { key: 'pass_defended', against: 'pass_defended_allowed', label: 'Pass Def', fmt: fmtCount },
+          { key: 'pass_defended', against: 'pass_defended_allowed', label: 'PD', fmt: fmtCount },
           { key: 'def_ints', against: 'def_ints_allowed', label: 'INT', fmt: fmtCount },
           { key: 'comp_pct_for', against: 'comp_pct_against', label: 'Comp %', fmt: fmtPct },
         ],
@@ -197,12 +197,18 @@ function GroupedStatsTable({ rows, groups, sortKey, sortDir, groupByConference, 
             {groups.map((g) =>
               g.stats.map((s) => (
                 <Fragment key={s.key}>
-                  <th className={`${thBase} px-2 pb-1 text-right font-normal`} onClick={() => onSort(`${s.key}:for`)}>
+                  <th
+                    className={`${thBase} px-2 pb-1 text-right font-normal text-green-600/80 dark:text-green-400/80`}
+                    onClick={() => onSort(`${s.key}:for`)}
+                  >
                     {s.label ? `${s.label} For` : 'For'}
                     <SortIndicator active={sortKey === `${s.key}:for`} dir={sortDir} />
                   </th>
-                  <th className={`${thBase} px-2 pb-1 text-right font-normal`} onClick={() => onSort(`${s.key}:against`)}>
-                    {s.label ? `${s.label} Vs` : 'Against'}
+                  <th
+                    className={`${thBase} px-2 pb-1 text-right font-normal text-red-600/80 dark:text-red-400/80`}
+                    onClick={() => onSort(`${s.key}:against`)}
+                  >
+                    {s.label ? `${s.label} Ag` : 'Against'}
                     <SortIndicator active={sortKey === `${s.key}:against`} dir={sortDir} />
                   </th>
                 </Fragment>
