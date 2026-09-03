@@ -1,6 +1,12 @@
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from './supabaseClient'
+import LoadingSpinner from './LoadingSpinner'
+
+const CONFERENCE_TEXT = {
+  AFC: 'text-red-600 dark:text-red-400',
+  NFC: 'text-blue-600 dark:text-blue-400',
+}
 
 const SEASONS = [2026, 2025, 2024]
 const DEFAULT_SEASON = 2025
@@ -204,7 +210,7 @@ function GroupedStatsTable({ rows, groups, sortKey, sortDir, groupByConference, 
               <td className="py-2 pr-2">
                 <TeamCell team={r.team} />
               </td>
-              <td className="px-2 py-2 text-neutral-500">{r.conference}</td>
+              <td className={`px-2 py-2 text-base font-medium ${CONFERENCE_TEXT[r.conference] ?? 'text-neutral-500'}`}>{r.conference}</td>
               <td className="px-2 py-2 text-right tabular-nums">{fmtDiff(r.win_diff)}</td>
               {groups.map((g) =>
                 g.stats.map((s) => (
@@ -226,6 +232,7 @@ function GroupedStatsTable({ rows, groups, sortKey, sortDir, groupByConference, 
 const SHARE_COLUMNS = [
   { key: 'qb_share_pct', label: 'QB Share %', title: 'Top QB’s share of team pass attempts — lower means a more volatile/committee QB situation' },
   { key: 'wr_target_pct', label: 'WR Target %' },
+  { key: 'wr1_wr2_target_pct_diff', label: 'WR1-WR2 Diff', title: 'Gap between the top individual WR\'s target share and the 2nd WR\'s — a bigger gap means a more one-man passing game' },
   { key: 'te_target_pct', label: 'TE Target %' },
   { key: 'rb_target_pct', label: 'RB Target %' },
   { key: 'rb1_carry_pct', label: 'RB1 Carry %' },
@@ -285,7 +292,7 @@ function ShareStatsTable({ rows, sortKey, sortDir, groupByConference, onSort, on
               <td className="py-2 pr-2">
                 <TeamCell team={r.team} />
               </td>
-              <td className="px-2 py-2 text-neutral-500">{r.conference}</td>
+              <td className={`px-2 py-2 text-base font-medium ${CONFERENCE_TEXT[r.conference] ?? 'text-neutral-500'}`}>{r.conference}</td>
               {SHARE_COLUMNS.map((c) => (
                 <td key={c.key} className="px-2 py-2 text-right tabular-nums">
                   {fmtPct(r[c.key])}
@@ -380,7 +387,7 @@ export default function TeamStatsTable() {
         </button>
       </div>
 
-      {loading && <p className="text-sm text-neutral-500">Loading…</p>}
+      {loading && <LoadingSpinner />}
       {error && <p className="text-sm text-red-500">Error: {error}</p>}
 
       {!loading && !error && activeTable === 'share' && (

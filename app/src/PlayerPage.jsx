@@ -2,6 +2,7 @@ import { Fragment, useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { supabase } from './supabaseClient'
 import { CURRENT_TEAMS, TEAM_COLORS } from './constants'
+import LoadingSpinner from './LoadingSpinner'
 
 const LOGO_BASE = `${import.meta.env.BASE_URL}logos/`
 const POSTSEASON_LABELS = { WC: 'WC', DIV: 'DIV', CON: 'CONF', SB: 'SB' }
@@ -788,7 +789,7 @@ export default function PlayerPage() {
 
   const injuryEvents = useMemo(() => collapseInjuryEvents(injuryHistory), [injuryHistory])
 
-  if (loading) return <p className="p-6 text-sm text-neutral-500">Loading…</p>
+  if (loading) return <LoadingSpinner full />
   if (error) return <p className="p-6 text-sm text-red-500">Error: {error}</p>
   if (!player) return <p className="p-6 text-sm text-neutral-500">Player not found.</p>
 

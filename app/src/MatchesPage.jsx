@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from './supabaseClient'
 import { CURRENT_TEAMS } from './constants'
+import LoadingSpinner from './LoadingSpinner'
 
 const SEASONS = [2026, 2025, 2024]
 const DEFAULT_SEASON = 2025
@@ -219,7 +220,7 @@ export default function MatchesPage() {
         ))}
       </div>
 
-      {loading && <p className="text-sm text-neutral-500">Loading…</p>}
+      {loading && <LoadingSpinner />}
       {error && <p className="text-sm text-red-500">Error: {error}</p>}
 
       {!loading && !error && (

@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { supabase } from './supabaseClient'
+import LoadingSpinner from './LoadingSpinner'
 
 const POSTSEASON_LABELS = { WC: 'Wild Card', DIV: 'Divisional', CON: 'Conference Championship', SB: 'Super Bowl' }
 
@@ -450,7 +451,7 @@ export default function GamePage() {
     }
   }, [gameId])
 
-  if (loading) return <p className="p-6 text-sm text-neutral-500">Loading…</p>
+  if (loading) return <LoadingSpinner full />
   if (error) return <p className="p-6 text-sm text-red-500">Error: {error}</p>
   if (!game) return <p className="p-6 text-sm text-neutral-500">Game not found.</p>
 

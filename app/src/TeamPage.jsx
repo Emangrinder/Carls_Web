@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { supabase } from './supabaseClient'
+import { TEAM_COLORS } from './constants'
+import LoadingSpinner from './LoadingSpinner'
 
 const SEASONS = [2026, 2025, 2024]
 const DEFAULT_SEASON = 2025
@@ -94,6 +96,25 @@ const INJURY_STATUS_STYLES = {
 }
 
 const OL_ORDER = ['LT', 'LG', 'C', 'RG', 'RT']
+// Left-to-right field order for position groups where the depth chart's
+// side-specific abbreviations (L*/R*) tell us how they'd actually line up.
+// Generic/no-side abbreviations (DE, DT, CB...) fall back to a middle slot.
+const DL_ORDER = ['LDE', 'LDT', 'NT', 'DT', 'RDT', 'RDE']
+// Sam (strong-side) and Will (weak-side) linebackers are the two edge LBs,
+// with the inside/Mike backers between them -- SLB and WLB on opposite
+// outsides per the user's explicit callout, not both crowded together.
+const LB_ORDER = ['WLB', 'LILB', 'MLB', 'ILB', 'RILB', 'SLB']
+const CB_ORDER = ['LCB', 'NB', 'RCB']
+
+function sortByFieldOrder(players, order) {
+  const mid = order.length / 2
+  const indexOf = (p) => {
+    const i = order.indexOf(p.position_abbr)
+    return i === -1 ? mid : i
+  }
+  return [...players].sort((a, b) => indexOf(a) - indexOf(b))
+}
+
 const KICKING_STARTER_ABBRS = ['PK', 'P']
 const RETURN_STARTER_ABBRS = ['KR', 'PR']
 // Skill positions where more than one depth slot is part of the base
@@ -263,7 +284,7 @@ export default function TeamPage() {
     }
   }, [teamAbbr, season])
 
-  if (loading) return <p className="p-6 text-sm text-neutral-500">Loading…</p>
+  if (loading) return <LoadingSpinner full />
   if (error) return <p className="p-6 text-sm text-red-500">Error: {error}</p>
   if (!team) return <p className="p-6 text-sm text-neutral-500">Team not found.</p>
 
@@ -286,9 +307,9 @@ export default function TeamPage() {
       const orderDiff = SKILL_ORDER.indexOf(a.position_abbr) - SKILL_ORDER.indexOf(b.position_abbr)
       return orderDiff !== 0 ? orderDiff : a.rank - b.rank
     })
-  const dlStarters = rank1.filter((p) => categoryOf(p) === 'dl')
-  const lbStarters = rank1.filter((p) => categoryOf(p) === 'lb')
-  const cbStarters = rank1.filter((p) => categoryOf(p) === 'cb')
+  const dlStarters = sortByFieldOrder(rank1.filter((p) => categoryOf(p) === 'dl'), DL_ORDER)
+  const lbStarters = sortByFieldOrder(rank1.filter((p) => categoryOf(p) === 'lb'), LB_ORDER)
+  const cbStarters = sortByFieldOrder(rank1.filter((p) => categoryOf(p) === 'cb'), CB_ORDER)
   const sStarters = rank1.filter((p) => categoryOf(p) === 's')
   const kickingStarters = rank1.filter((p) => KICKING_STARTER_ABBRS.includes(p.position_abbr))
   const returnStarters = rank1.filter((p) => RETURN_STARTER_ABBRS.includes(p.position_abbr))
@@ -318,8 +339,25 @@ export default function TeamPage() {
         .sort((a, b) => a.rank - b.rank)[0]
     : null
 
+  const colors = TEAM_COLORS[team.team_abbr]
+  const record = stats && (
+    <span className="text-xs font-normal normal-case text-neutral-400">
+      {stats.wins}-{stats.losses}
+      {stats.ties ? `-${stats.ties}` : ''} ({fmtDiff(stats.win_diff)})
+    </span>
+  )
+
   return (
-    <div className="mx-auto w-full max-w-6xl px-4 py-6">
+    <div
+      className="mx-auto w-full max-w-6xl px-4 py-6"
+      style={
+        colors
+          ? {
+              backgroundImage: `linear-gradient(to bottom, ${colors.primary}14, ${colors.secondary}0a, transparent 320px)`,
+            }
+          : undefined
+      }
+    >
       {/* Header: logo, name, conference/division */}
       <div className="mb-4 flex items-center gap-4">
         <img
@@ -331,9 +369,7 @@ export default function TeamPage() {
           <h1 className="text-2xl font-semibold text-neutral-900 dark:text-neutral-100">
             {team.team_name}
           </h1>
-          <p className="text-sm text-neutral-500">
-            {team.conference} {team.division}
-          </p>
+          <p className="text-sm text-neutral-500">{team.division}</p>
         </div>
       </div>
 
@@ -402,8 +438,9 @@ export default function TeamPage() {
         </div>
 
         <div className="min-w-0 flex-1">
-          <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-neutral-500">
+          <h2 className="mb-2 flex items-baseline gap-2 text-sm font-semibold uppercase tracking-wide text-neutral-500">
             Schedule
+            {record}
           </h2>
           <div className="mb-2 grid grid-cols-9 gap-2">
             {WEEKS_PART1.map((week) => (
@@ -446,12 +483,7 @@ export default function TeamPage() {
 
           <h2 className="mb-2 mt-4 flex items-baseline gap-2 text-sm font-semibold uppercase tracking-wide text-neutral-500">
             Season Stats
-            {stats && (
-              <span className="text-xs font-normal normal-case text-neutral-400">
-                {stats.wins}-{stats.losses}
-                {stats.ties ? `-${stats.ties}` : ''} ({fmtDiff(stats.win_diff)})
-              </span>
-            )}
+            {record}
           </h2>
           <table className="w-full border-collapse text-sm">
             <thead>

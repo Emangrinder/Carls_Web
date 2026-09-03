@@ -5,6 +5,10 @@ import { CURRENT_TEAMS } from './constants'
 
 const CONFERENCES = ['AFC', 'NFC']
 const DIVISION_ORDER = ['East', 'North', 'South', 'West']
+const CONFERENCE_TEXT = {
+  AFC: 'text-red-600 dark:text-red-400',
+  NFC: 'text-blue-600 dark:text-blue-400',
+}
 
 export default function DivisionNav() {
   const [teams, setTeams] = useState([])
@@ -32,7 +36,7 @@ export default function DivisionNav() {
     <nav className="hidden w-16 shrink-0 border-r border-neutral-200 px-2 py-4 lg:block dark:border-neutral-800">
       {CONFERENCES.map((conf) => (
         <div key={conf} className="mb-6">
-          <h2 className="mb-2 text-sm font-bold uppercase tracking-wide text-neutral-500">
+          <h2 className={`mb-2 text-base font-bold uppercase tracking-wide ${CONFERENCE_TEXT[conf] ?? 'text-neutral-500'}`}>
             {conf}
           </h2>
           {DIVISION_ORDER.map((div) => {
@@ -40,7 +44,7 @@ export default function DivisionNav() {
             if (teamAbbrs.length === 0) return null
             return (
               <div key={div} className="mb-3">
-                <h3 className="mb-1 text-[11px] font-medium text-neutral-400">{div}</h3>
+                <h3 className="mb-1 text-xs font-medium text-neutral-400">{div}</h3>
                 <div className="grid grid-cols-1 gap-1.5">
                   {teamAbbrs.map((abbr) => (
                     <Link key={abbr} to={`/team/${abbr}`} title={abbr}>
