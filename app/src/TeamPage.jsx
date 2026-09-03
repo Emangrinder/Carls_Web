@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { supabase } from './supabaseClient'
 
-const SEASONS = [2025, 2024]
+const SEASONS = [2026, 2025, 2024]
+const DEFAULT_SEASON = 2025
 const WEEKS = Array.from({ length: 18 }, (_, i) => i + 1)
 
 function fmtDiff(n) {
@@ -28,9 +29,53 @@ const STAT_ROWS = [
   { label: 'Defensive Snaps Avg', for: 'defense_snaps_avg', against: 'defense_snaps_allowed_avg', fmt: fmtAvg },
 ]
 
+// Maps a depth chart position_abbr to a stable category, independent of
+// each team's own (inconsistently named) position_group formation labels.
+const POSITION_CATEGORY = {
+  QB: 'qb',
+  LT: 'ol', LG: 'ol', C: 'ol', RG: 'ol', RT: 'ol',
+  RB: 'skill', WR: 'skill', TE: 'skill', FB: 'skill',
+  LDE: 'dl', RDE: 'dl', DE: 'dl', NT: 'dl', DT: 'dl',
+  WLB: 'lb', SLB: 'lb', MLB: 'lb', LILB: 'lb', RILB: 'lb', ILB: 'lb', OLB: 'lb',
+  LCB: 'cb', RCB: 'cb', CB: 'cb', NB: 'cb',
+  FS: 's', SS: 's', S: 's',
+  PK: 'st', P: 'st', KR: 'st', PR: 'st', LS: 'st', H: 'st',
+}
+const OL_ORDER = ['LT', 'LG', 'C', 'RG', 'RT']
+const ST_STARTER_ABBRS = ['PK', 'P', 'KR', 'PR']
+
+function categoryOf(p) {
+  return POSITION_CATEGORY[p.position_abbr] ?? 'other'
+}
+
+function PlayerChip({ p }) {
+  return (
+    <div className="rounded border border-neutral-200 px-2 py-1 text-center text-xs dark:border-neutral-800">
+      <div className="text-[10px] text-neutral-500">{p.position_abbr}</div>
+      <div className="font-medium text-neutral-900 dark:text-neutral-100">
+        {p.player_name ?? '—'}
+      </div>
+    </div>
+  )
+}
+
+function StarterRow({ label, players }) {
+  if (players.length === 0) return null
+  return (
+    <div className="mb-2 flex flex-wrap items-center gap-2">
+      <span className="w-24 shrink-0 text-xs text-neutral-500">{label}</span>
+      <div className="flex flex-wrap gap-2">
+        {players.map((p) => (
+          <PlayerChip key={`${p.position_name}-${p.position_slot}`} p={p} />
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export default function TeamPage() {
   const { teamAbbr } = useParams()
-  const [season, setSeason] = useState(SEASONS[0])
+  const [season, setSeason] = useState(DEFAULT_SEASON)
   const [team, setTeam] = useState(null)
   const [stats, setStats] = useState(null)
   const [depthChart, setDepthChart] = useState([])
@@ -45,7 +90,7 @@ export default function TeamPage() {
 
     Promise.all([
       supabase.from('teams').select('*').eq('team_abbr', teamAbbr).single(),
-      supabase.from('team_season_stats').select('*').eq('team', teamAbbr).eq('season', season).single(),
+      supabase.from('team_season_stats').select('*').eq('team', teamAbbr).eq('season', season).maybeSingle(),
       supabase.from('depth_chart_ranks').select('*').eq('team', teamAbbr).order('position_group').order('rank'),
       supabase
         .from('games')
@@ -77,7 +122,27 @@ export default function TeamPage() {
   if (!team) return <p className="p-6 text-sm text-neutral-500">Team not found.</p>
 
   const gamesByWeek = new Map(games.map((g) => [g.week, g]))
-  const depthByGroup = depthChart.reduce((acc, row) => {
+
+  // Starters: rank 1 within each recognized category.
+  const rank1 = depthChart.filter((p) => p.rank === 1)
+  const qbStarters = rank1.filter((p) => categoryOf(p) === 'qb')
+  const olStarters = rank1
+    .filter((p) => categoryOf(p) === 'ol')
+    .sort((a, b) => OL_ORDER.indexOf(a.position_abbr) - OL_ORDER.indexOf(b.position_abbr))
+  const skillStarters = rank1.filter((p) => categoryOf(p) === 'skill')
+  const dlStarters = rank1.filter((p) => categoryOf(p) === 'dl')
+  const lbStarters = rank1.filter((p) => categoryOf(p) === 'lb')
+  const cbStarters = rank1.filter((p) => categoryOf(p) === 'cb')
+  const sStarters = rank1.filter((p) => categoryOf(p) === 's')
+  const stStarters = rank1.filter((p) => ST_STARTER_ABBRS.includes(p.position_abbr))
+
+  const shownInStarters = new Set([
+    ...qbStarters, ...olStarters, ...skillStarters,
+    ...dlStarters, ...lbStarters, ...cbStarters, ...sStarters,
+    ...stStarters,
+  ])
+  const depthRest = depthChart.filter((p) => !shownInStarters.has(p))
+  const depthByGroup = depthRest.reduce((acc, row) => {
     ;(acc[row.position_group] ??= []).push(row)
     return acc
   }, {})
@@ -125,86 +190,124 @@ export default function TeamPage() {
         </div>
       </div>
 
-      {/* Schedule ribbon */}
-      <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-neutral-500">
-        Schedule
-      </h2>
-      <div className="mb-8 flex flex-wrap gap-2">
-        {WEEKS.map((week) => {
-          const g = gamesByWeek.get(week)
-          if (!g) {
-            return (
-              <div key={week} className="flex flex-col items-center gap-1">
-                <img
-                  src={`${import.meta.env.BASE_URL}logos/NFL.png`}
-                  alt="Bye"
-                  className="h-8 w-8 object-contain opacity-50"
-                />
-                <span className="text-[10px] text-neutral-400">W{week}</span>
-              </div>
-            )
-          }
-          const isHome = g.home_team === teamAbbr
-          const opponent = isHome ? g.away_team : g.home_team
-          const teamScore = isHome ? g.home_score : g.away_score
-          const oppScore = isHome ? g.away_score : g.home_score
-          let result = null
-          if (teamScore != null && oppScore != null) {
-            result = teamScore > oppScore ? 'W' : teamScore < oppScore ? 'L' : 'T'
-          }
-          const resultColor =
-            result === 'W'
-              ? 'text-green-600 dark:text-green-400'
-              : result === 'L'
-                ? 'text-red-600 dark:text-red-400'
-                : 'text-neutral-500'
-          return (
-            <div key={week} className="flex flex-col items-center gap-1">
-              <img
-                src={`${import.meta.env.BASE_URL}logos/${opponent}.png`}
-                alt={opponent}
-                className="h-8 w-8 object-contain"
-              />
-              <span className={`text-[10px] font-medium ${resultColor}`}>
-                {result ?? '—'}
-              </span>
-            </div>
-          )
-        })}
-      </div>
-
-      {/* Season stats FOR/AGAINST */}
-      <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-neutral-500">
-        Season Stats
-      </h2>
-      <table className="mb-8 w-full max-w-md border-collapse text-sm">
-        <thead>
-          <tr className="border-b border-neutral-200 text-left text-neutral-500 dark:border-neutral-800">
-            <th className="py-2 font-medium">Stat</th>
-            <th className="px-2 py-2 text-right font-medium">For</th>
-            <th className="px-2 py-2 text-right font-medium">Against</th>
-          </tr>
-        </thead>
-        <tbody>
-          {stats &&
-            STAT_ROWS.map((row) => (
-              <tr key={row.label} className="border-b border-neutral-100 dark:border-neutral-900">
-                <td className="py-1.5 text-neutral-700 dark:text-neutral-300">{row.label}</td>
-                <td className="px-2 py-1.5 text-right tabular-nums">{row.fmt(stats[row.for])}</td>
-                <td className="px-2 py-1.5 text-right tabular-nums">{row.fmt(stats[row.against])}</td>
+      {/* Season stats (left) + schedule (right) */}
+      <div className="mb-8 flex flex-col gap-8 lg:flex-row">
+        <div className="lg:w-[380px] lg:shrink-0">
+          <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-neutral-500">
+            Season Stats
+          </h2>
+          <table className="w-full border-collapse text-sm">
+            <thead>
+              <tr className="border-b border-neutral-200 text-left text-neutral-500 dark:border-neutral-800">
+                <th className="py-2 font-medium">Stat</th>
+                <th className="px-2 py-2 text-right font-medium">For</th>
+                <th className="px-2 py-2 text-right font-medium">Against</th>
               </tr>
-            ))}
-        </tbody>
-      </table>
+            </thead>
+            <tbody>
+              {stats ? (
+                STAT_ROWS.map((row) => (
+                  <tr key={row.label} className="border-b border-neutral-100 dark:border-neutral-900">
+                    <td className="py-1.5 text-neutral-700 dark:text-neutral-300">{row.label}</td>
+                    <td className="px-2 py-1.5 text-right tabular-nums">{row.fmt(stats[row.for])}</td>
+                    <td className="px-2 py-1.5 text-right tabular-nums">{row.fmt(stats[row.against])}</td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={3} className="py-4 text-center text-neutral-400">
+                    No stats yet for {season}.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="min-w-0 flex-1">
+          <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-neutral-500">
+            Schedule
+          </h2>
+          <div className="flex flex-wrap gap-2">
+            {WEEKS.map((week) => {
+              const g = gamesByWeek.get(week)
+              if (!g) {
+                return (
+                  <div key={week} className="flex flex-col items-center gap-1">
+                    <img
+                      src={`${import.meta.env.BASE_URL}logos/NFL.png`}
+                      alt="Bye"
+                      className="h-8 w-8 object-contain opacity-50"
+                    />
+                    <span className="text-[10px] text-neutral-400">W{week}</span>
+                    <span className="text-[9px] text-transparent">@</span>
+                  </div>
+                )
+              }
+              const isHome = g.home_team === teamAbbr
+              const opponent = isHome ? g.away_team : g.home_team
+              const teamScore = isHome ? g.home_score : g.away_score
+              const oppScore = isHome ? g.away_score : g.home_score
+              let result = null
+              if (teamScore != null && oppScore != null) {
+                result = teamScore > oppScore ? 'W' : teamScore < oppScore ? 'L' : 'T'
+              }
+              const resultColor =
+                result === 'W'
+                  ? 'text-green-600 dark:text-green-400'
+                  : result === 'L'
+                    ? 'text-red-600 dark:text-red-400'
+                    : 'text-neutral-500'
+              return (
+                <div key={week} className="flex flex-col items-center gap-1">
+                  <img
+                    src={`${import.meta.env.BASE_URL}logos/${opponent}.png`}
+                    alt={opponent}
+                    className="h-8 w-8 object-contain"
+                  />
+                  <span className={`text-[10px] font-medium ${resultColor}`}>
+                    {result ?? '—'}
+                  </span>
+                  <span className="text-[9px] text-neutral-400">
+                    {isHome ? ' ' : '@'}
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      </div>
 
       {/* Depth chart */}
       <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-neutral-500">
         Depth Chart
       </h2>
+
+      <div className="mb-4">
+        <h3 className="mb-1 text-xs font-bold uppercase text-neutral-400">Starting Offense</h3>
+        <StarterRow label="QB" players={qbStarters} />
+        <StarterRow label="Offensive Line" players={olStarters} />
+        <StarterRow label="Skill" players={skillStarters} />
+      </div>
+
+      <div className="mb-4">
+        <h3 className="mb-1 text-xs font-bold uppercase text-neutral-400">Starting Defense</h3>
+        <StarterRow label="D-Line" players={dlStarters} />
+        <StarterRow label="Linebackers" players={lbStarters} />
+        <StarterRow label="Corners" players={cbStarters} />
+        <StarterRow label="Safeties" players={sStarters} />
+      </div>
+
+      <div className="mb-6">
+        <h3 className="mb-1 text-xs font-bold uppercase text-neutral-400">Special Teams</h3>
+        <StarterRow label="Starters" players={stStarters} />
+      </div>
+
+      <h3 className="mb-2 text-xs font-bold uppercase text-neutral-400">Depth</h3>
       <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
         {Object.entries(depthByGroup).map(([group, players]) => (
           <div key={group}>
-            <h3 className="mb-1 text-xs font-semibold text-neutral-500">{group}</h3>
+            <h4 className="mb-1 text-xs font-semibold text-neutral-500">{group}</h4>
             <ul className="text-sm">
               {players.map((p) => (
                 <li

@@ -34,7 +34,27 @@ def download(url: str, dest: Path) -> Path:
     return dest
 
 
-def read_csv_rows(path: Path):
+def download_optional(url: str, dest: Path):
+    """Like download(), but for per-season files that may not exist yet --
+    e.g. stats_player_week_<season> before that season's first game has
+    been played. Returns None instead of raising, and never caches a failed
+    attempt, so a later run picks it up as soon as nflverse actually
+    publishes it."""
+    if dest.exists():
+        return dest
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    print(f"  downloading {url}")
+    result = subprocess.run(["curl", "-sL", "-f", "-o", str(dest), url])
+    if result.returncode != 0:
+        dest.unlink(missing_ok=True)
+        print(f"  not available yet, skipping: {url}")
+        return None
+    return dest
+
+
+def read_csv_rows(path):
+    if path is None:
+        return
     opener = gzip.open if path.suffix == ".gz" else open
     with opener(path, "rt", newline="", encoding="utf-8") as f:
         yield from csv.DictReader(f)
@@ -122,11 +142,11 @@ def main():
     teams_csv = download(f"{RELEASE_BASE}/teams/teams_colors_logos.csv", REFERENCE_DIR / "teams_colors_logos.csv")
     players_csv = download(f"{RELEASE_BASE}/players/players.csv", REFERENCE_DIR / "players.csv")
     games_csv = download(f"{RELEASE_BASE}/schedules/games.csv", REFERENCE_DIR / "games.csv")
-    stats_week_csv = download(
+    stats_week_csv = download_optional(
         f"{RELEASE_BASE}/stats_player/stats_player_week_{season}.csv.gz",
         season_dir / f"stats_player_week_{season}.csv.gz",
     )
-    snap_counts_csv = download(
+    snap_counts_csv = download_optional(
         f"{RELEASE_BASE}/snap_counts/snap_counts_{season}.csv.gz",
         season_dir / f"snap_counts_{season}.csv.gz",
     )
@@ -264,7 +284,7 @@ def main():
     # 4a. PFR advanced rushing (yards after contact) -> lookup by (gsis_id, game_id)
     # ------------------------------------------------------------------
     print("Loading PFR advanced rushing (yards after contact)...")
-    advrush_csv = download(
+    advrush_csv = download_optional(
         f"{RELEASE_BASE}/pfr_advstats/advstats_week_rush_{season}.csv.gz",
         season_dir / f"advstats_week_rush_{season}.csv.gz",
     )

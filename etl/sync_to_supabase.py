@@ -45,24 +45,33 @@ def sqlite_rows(db_path, table, columns):
     conn.close()
 
 
+# nflverse season DBs, one per season we retain -- adding a season means
+# adding it here (and to SEASONS in the ETL workflow) and nowhere else.
+SEASON_DBS = [DB_DIR / "nfl_2024.db", DB_DIR / "nfl_2025.db", DB_DIR / "nfl_2026.db"]
+
+
+def season_sources(table):
+    return [(db, table) for db in SEASON_DBS]
+
+
 # (postgres_table, columns in destination order, [(sqlite_db, sqlite_table)], dedupe_key or None)
 TABLE_SPECS = [
     ("teams", ["team_abbr", "team_name", "team_nick", "conference", "division"],
-     [(DB_DIR / "nfl_2024.db", "teams"), (DB_DIR / "nfl_2025.db", "teams")], "team_abbr"),
+     season_sources("teams"), "team_abbr"),
 
     ("players", ["player_id", "display_name", "first_name", "last_name", "position",
                  "position_group", "height", "weight", "college_name", "birth_date",
                  "rookie_season", "jersey_number", "pfr_id"],
-     [(DB_DIR / "nfl_2024.db", "players"), (DB_DIR / "nfl_2025.db", "players")], "player_id"),
+     season_sources("players"), "player_id"),
 
     ("games", ["game_id", "season", "week", "game_type", "gameday", "weekday", "gametime",
                "home_team", "away_team", "home_score", "away_score", "roof", "surface",
                "temp", "wind", "spread_line", "total_line", "referee", "stadium"],
-     [(DB_DIR / "nfl_2024.db", "games"), (DB_DIR / "nfl_2025.db", "games")], None),
+     season_sources("games"), None),
 
     ("player_snap_counts", ["player_id", "game_id", "team", "position", "offense_snaps",
                             "offense_pct", "defense_snaps", "defense_pct", "st_snaps", "st_pct"],
-     [(DB_DIR / "nfl_2024.db", "player_snap_counts"), (DB_DIR / "nfl_2025.db", "player_snap_counts")], None),
+     season_sources("player_snap_counts"), None),
 
     ("player_offense_stats", [
         "player_id", "game_id", "team", "opponent_team", "completions", "attempts",
@@ -78,7 +87,7 @@ TABLE_SPECS = [
         "fantasy_points", "fantasy_points_ppr", "passing_20", "passing_40", "rushing_20",
         "rushing_40", "receiving_20", "receiving_40", "rushing_yards_after_contact",
         "penalties", "penalty_yards",
-    ], [(DB_DIR / "nfl_2024.db", "player_offense_stats"), (DB_DIR / "nfl_2025.db", "player_offense_stats")], None),
+    ], season_sources("player_offense_stats"), None),
 
     ("player_defense_stats", [
         "player_id", "game_id", "team", "opponent_team", "def_tackles_solo",
@@ -88,7 +97,7 @@ TABLE_SPECS = [
         "def_tds", "def_fumbles", "def_safeties", "fumble_recovery_own",
         "fumble_recovery_yards_own", "fumble_recovery_opp", "fumble_recovery_yards_opp",
         "fumble_recovery_tds", "penalties", "penalty_yards",
-    ], [(DB_DIR / "nfl_2024.db", "player_defense_stats"), (DB_DIR / "nfl_2025.db", "player_defense_stats")], None),
+    ], season_sources("player_defense_stats"), None),
 
     ("player_special_teams_stats", [
         "player_id", "game_id", "team", "opponent_team", "fg_made", "fg_att", "fg_missed",
@@ -102,7 +111,7 @@ TABLE_SPECS = [
         "pt_fair_caught", "pt_returned", "pt_return_yards", "pt_return_tds", "punt_returns",
         "punt_return_yards", "kickoff_returns", "kickoff_return_yards", "special_teams_tds",
         "penalties", "penalty_yards",
-    ], [(DB_DIR / "nfl_2024.db", "player_special_teams_stats"), (DB_DIR / "nfl_2025.db", "player_special_teams_stats")], None),
+    ], season_sources("player_special_teams_stats"), None),
 
     ("college_rosters", ["athlete_id", "player_id", "first_name", "last_name", "full_name",
                          "team", "position", "jersey", "class_year", "height", "weight",

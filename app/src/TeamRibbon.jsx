@@ -1,3 +1,5 @@
+import { Link } from 'react-router-dom'
+
 // Alphabetical by abbreviation — good enough for a rotating strip; revisit
 // if we ever want true alphabetical-by-city ordering.
 const TEAMS = [
@@ -20,9 +22,9 @@ function Logo({ team, className = '' }) {
 export default function TeamRibbon() {
   return (
     <div className="flex w-full items-center gap-4 border-b border-neutral-200 bg-white px-4 py-2 dark:border-neutral-800 dark:bg-neutral-950">
-      <div className="shrink-0 border-r border-neutral-200 pr-4 dark:border-neutral-800">
+      <Link to="/" className="shrink-0 border-r border-neutral-200 pr-4 dark:border-neutral-800">
         <Logo team="NFL" />
-      </div>
+      </Link>
       <div
         className="min-w-0 flex-1 overflow-hidden"
         style={{
@@ -34,7 +36,9 @@ export default function TeamRibbon() {
       >
         <div className="flex w-max animate-ribbon">
           {[...TEAMS, ...TEAMS].map((team, i) => (
-            <Logo key={`${team}-${i}`} team={team} className="mr-8" />
+            <Link key={`${team}-${i}`} to={`/team/${team}`} className="mr-8 shrink-0">
+              <Logo team={team} />
+            </Link>
           ))}
         </div>
       </div>

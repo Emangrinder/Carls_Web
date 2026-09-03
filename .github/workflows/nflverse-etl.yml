@@ -10,7 +10,12 @@ env:
   # run rebuilds ALL of these from scratch (the runner starts with no local
   # state), so removing a season here means it drops out of Postgres on the
   # next sync, not just "stops updating" — this list IS the retention window.
-  SEASONS: "2024 2025"
+  # 2026 is included even though the season hasn't started -- its schedule
+  # is already published, and build_db.py treats missing per-season stats
+  # files (stats_player_week, snap_counts, pfr_advstats) as "not out yet"
+  # rather than failing, so this just yields 0 stat rows until real games
+  # are played.
+  SEASONS: "2024 2025 2026"
   # Single-snapshot tables (active roster, current injuries, depth chart).
   # Bump this once nflverse starts publishing the new season's data (usually
   # once week 1 rosters/injuries actually exist) -- until then the old
