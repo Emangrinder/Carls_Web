@@ -198,7 +198,13 @@ function BoxScoreSection({ title, columns, rows }) {
           {rows.map((r) => (
             <tr key={r.player_id} className="border-b border-neutral-100 dark:border-neutral-900">
               <td className="py-1.5 text-neutral-900 dark:text-neutral-100">
-                {r.players?.display_name ?? '—'}
+                {r.player_id ? (
+                  <Link to={`/player/${r.player_id}`} className="hover:underline">
+                    {r.players?.display_name ?? '—'}
+                  </Link>
+                ) : (
+                  (r.players?.display_name ?? '—')
+                )}
               </td>
               <td className="py-1.5 pl-2 text-neutral-500">{r.team}</td>
               {columns.map((c) => (
@@ -228,7 +234,13 @@ function InjuryList({ abbr, rows }) {
               className="flex justify-between gap-2 border-b border-neutral-100 py-1 dark:border-neutral-900"
             >
               <span className="text-neutral-700 dark:text-neutral-300">
-                {r.full_name}
+                {r.player_id ? (
+                  <Link to={`/player/${r.player_id}`} className="hover:underline">
+                    {r.full_name}
+                  </Link>
+                ) : (
+                  r.full_name
+                )}
                 <span className="ml-1 text-xs text-neutral-400">{r.position}</span>
               </span>
               <span className={`shrink-0 text-xs font-medium ${INJURY_STATUS_STYLES[r.report_status] ?? 'text-neutral-400'}`}>

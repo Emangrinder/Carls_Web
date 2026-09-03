@@ -118,13 +118,16 @@ function lastNameOnly(fullName) {
   return rest || fullName
 }
 
-function PlayerChip({ p, injuryStatus }) {
+function PlayerChip({ p, injuryStatus, onHoverInjured, onUnhoverInjured }) {
   const style = INJURY_STATUS_STYLES[injuryStatus]
   return (
-    <div
-      className={`shrink-0 whitespace-nowrap rounded border px-2 py-1 text-center text-xs ${
+    <Link
+      to={`/player/${p.player_id}`}
+      className={`shrink-0 whitespace-nowrap rounded border px-2 py-1 text-center text-xs hover:opacity-75 ${
         style ? style.chip : 'border-neutral-200 dark:border-neutral-800'
       }`}
+      onMouseEnter={injuryStatus ? () => onHoverInjured?.(p) : undefined}
+      onMouseLeave={injuryStatus ? () => onUnhoverInjured?.() : undefined}
     >
       <div className="text-[10px] text-neutral-500">
         {p.position_abbr}
@@ -133,7 +136,7 @@ function PlayerChip({ p, injuryStatus }) {
       <div className="font-medium text-neutral-900 dark:text-neutral-100">
         {lastNameOnly(p.player_name)}
       </div>
-    </div>
+    </Link>
   )
 }
 
@@ -192,7 +195,7 @@ function GameCell({ teamAbbr, game, byeLabel }) {
   )
 }
 
-function StarterRow({ label, players, injuryByPlayerId }) {
+function StarterRow({ label, players, injuryByPlayerId, onHoverInjured, onUnhoverInjured }) {
   if (players.length === 0) return null
   return (
     <div className="mb-3">
@@ -203,6 +206,8 @@ function StarterRow({ label, players, injuryByPlayerId }) {
             key={`${p.position_name}-${p.position_slot}-${p.rank}`}
             p={p}
             injuryStatus={injuryByPlayerId.get(p.player_id)}
+            onHoverInjured={onHoverInjured}
+            onUnhoverInjured={onUnhoverInjured}
           />
         ))}
       </div>
@@ -218,6 +223,7 @@ export default function TeamPage() {
   const [depthChart, setDepthChart] = useState([])
   const [injuries, setInjuries] = useState([])
   const [games, setGames] = useState([])
+  const [hoveredInjuredPlayer, setHoveredInjuredPlayer] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
@@ -299,6 +305,19 @@ export default function TeamPage() {
     return acc
   }, {})
 
+  // "Next up" for a hovered injured starter: the lowest-ranked bench player
+  // (not an already-visible starter) in that exact same position slot.
+  const nextUpPlayer = hoveredInjuredPlayer
+    ? depthRest
+        .filter(
+          (p) =>
+            p.position_name === hoveredInjuredPlayer.position_name &&
+            p.position_slot === hoveredInjuredPlayer.position_slot &&
+            p.rank > hoveredInjuredPlayer.rank,
+        )
+        .sort((a, b) => a.rank - b.rank)[0]
+    : null
+
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-6">
       {/* Header: logo, name, conference/division */}
@@ -344,23 +363,41 @@ export default function TeamPage() {
 
           <div className="mb-4">
             <h3 className="mb-1 text-xs font-bold uppercase text-neutral-400">Starting Offense</h3>
-            <StarterRow label="QB" players={qbStarters} injuryByPlayerId={injuryByPlayerId} />
-            <StarterRow label="Offensive Line" players={olStarters} injuryByPlayerId={injuryByPlayerId} />
-            <StarterRow label="Skill" players={skillStarters} injuryByPlayerId={injuryByPlayerId} />
+            <StarterRow label="QB" players={qbStarters} injuryByPlayerId={injuryByPlayerId}
+              onHoverInjured={setHoveredInjuredPlayer}
+              onUnhoverInjured={() => setHoveredInjuredPlayer(null)} />
+            <StarterRow label="Offensive Line" players={olStarters} injuryByPlayerId={injuryByPlayerId}
+              onHoverInjured={setHoveredInjuredPlayer}
+              onUnhoverInjured={() => setHoveredInjuredPlayer(null)} />
+            <StarterRow label="Skill" players={skillStarters} injuryByPlayerId={injuryByPlayerId}
+              onHoverInjured={setHoveredInjuredPlayer}
+              onUnhoverInjured={() => setHoveredInjuredPlayer(null)} />
           </div>
 
           <div className="mb-4">
             <h3 className="mb-1 text-xs font-bold uppercase text-neutral-400">Starting Defense</h3>
-            <StarterRow label="D-Line" players={dlStarters} injuryByPlayerId={injuryByPlayerId} />
-            <StarterRow label="Linebackers" players={lbStarters} injuryByPlayerId={injuryByPlayerId} />
-            <StarterRow label="Corners" players={cbStarters} injuryByPlayerId={injuryByPlayerId} />
-            <StarterRow label="Safeties" players={sStarters} injuryByPlayerId={injuryByPlayerId} />
+            <StarterRow label="D-Line" players={dlStarters} injuryByPlayerId={injuryByPlayerId}
+              onHoverInjured={setHoveredInjuredPlayer}
+              onUnhoverInjured={() => setHoveredInjuredPlayer(null)} />
+            <StarterRow label="Linebackers" players={lbStarters} injuryByPlayerId={injuryByPlayerId}
+              onHoverInjured={setHoveredInjuredPlayer}
+              onUnhoverInjured={() => setHoveredInjuredPlayer(null)} />
+            <StarterRow label="Corners" players={cbStarters} injuryByPlayerId={injuryByPlayerId}
+              onHoverInjured={setHoveredInjuredPlayer}
+              onUnhoverInjured={() => setHoveredInjuredPlayer(null)} />
+            <StarterRow label="Safeties" players={sStarters} injuryByPlayerId={injuryByPlayerId}
+              onHoverInjured={setHoveredInjuredPlayer}
+              onUnhoverInjured={() => setHoveredInjuredPlayer(null)} />
           </div>
 
           <div className="mb-2">
             <h3 className="mb-1 text-xs font-bold uppercase text-neutral-400">Special Teams</h3>
-            <StarterRow label="Kicking" players={kickingStarters} injuryByPlayerId={injuryByPlayerId} />
-            <StarterRow label="Return" players={returnStarters} injuryByPlayerId={injuryByPlayerId} />
+            <StarterRow label="Kicking" players={kickingStarters} injuryByPlayerId={injuryByPlayerId}
+              onHoverInjured={setHoveredInjuredPlayer}
+              onUnhoverInjured={() => setHoveredInjuredPlayer(null)} />
+            <StarterRow label="Return" players={returnStarters} injuryByPlayerId={injuryByPlayerId}
+              onHoverInjured={setHoveredInjuredPlayer}
+              onUnhoverInjured={() => setHoveredInjuredPlayer(null)} />
           </div>
         </div>
 
@@ -456,17 +493,23 @@ export default function TeamPage() {
             <ul className="text-sm">
               {players.map((p) => {
                 const injuryStyle = INJURY_STATUS_STYLES[injuryByPlayerId.get(p.player_id)]
+                const isNextUp = p === nextUpPlayer
                 return (
                   <li
                     key={`${p.position_name}-${p.position_slot}-${p.rank}`}
-                    className="flex justify-between border-b border-neutral-100 py-1 dark:border-neutral-900"
+                    className={`flex justify-between border-b border-neutral-100 py-1 dark:border-neutral-900 ${
+                      isNextUp ? 'rounded bg-blue-50 ring-1 ring-blue-300 dark:bg-blue-950/40 dark:ring-blue-700' : ''
+                    }`}
                   >
                     <span className="text-neutral-500">
                       {p.position_abbr} #{p.rank}
                     </span>
-                    <span className={injuryStyle ? injuryStyle.text : 'text-neutral-900 dark:text-neutral-100'}>
+                    <Link
+                      to={`/player/${p.player_id}`}
+                      className={`hover:underline ${injuryStyle ? injuryStyle.text : 'text-neutral-900 dark:text-neutral-100'}`}
+                    >
                       {p.player_name ?? '—'}
-                    </span>
+                    </Link>
                   </li>
                 )
               })}
