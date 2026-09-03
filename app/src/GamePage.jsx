@@ -23,6 +23,12 @@ function fmtCount(n) {
   return n ?? 0
 }
 
+// Box-score cells specifically: a bare 0 just adds visual noise across a
+// wide stat grid, so blank it out like a missing value would be.
+function fmtStat(n) {
+  return n == null || n === 0 ? '—' : n
+}
+
 function fmtPct(n) {
   return n == null ? '—' : `${n}%`
 }
@@ -103,7 +109,7 @@ function buildStatRow(rows) {
 // Box-score column sets. Each column renders straight off the row rather
 // than a plain key lookup so combined fields (e.g. fumble recoveries, which
 // come from separate _own/_opp columns) work the same way simple ones do.
-const c = (label, key) => ({ label, render: (r) => fmtCount(r[key]) })
+const c = (label, key) => ({ label, render: (r) => fmtStat(r[key]) })
 const PASSING_COLUMNS = [
   c('C', 'completions'),
   c('ATT', 'attempts'),
@@ -126,20 +132,22 @@ const DEFENSE_COLUMNS = [
   c('QB HITS', 'def_qb_hits'),
   c('PD', 'def_pass_defended'),
 ]
-const INTERCEPTIONS_COLUMNS = [c('INT', 'def_interceptions'), c('YDS', 'def_interception_yards')]
-const FORCED_FUMBLES_COLUMNS = [c('FF', 'def_fumbles_forced')]
-const FUMBLE_RECOVERIES_COLUMNS = [
-  { label: 'FR', render: (r) => fmtCount((r.fumble_recovery_own ?? 0) + (r.fumble_recovery_opp ?? 0)) },
+// Interceptions + forced fumbles + fumble recoveries in one takeaways table
+// (all three are "defense created a turnover", just different mechanisms).
+const TAKEAWAYS_COLUMNS = [
+  c('INT', 'def_interceptions'),
+  c('INT YDS', 'def_interception_yards'),
+  c('FF', 'def_fumbles_forced'),
+  { label: 'FR', render: (r) => fmtStat((r.fumble_recovery_own ?? 0) + (r.fumble_recovery_opp ?? 0)) },
   {
-    label: 'YDS',
-    render: (r) => fmtCount((r.fumble_recovery_yards_own ?? 0) + (r.fumble_recovery_yards_opp ?? 0)),
+    label: 'FR YDS',
+    render: (r) => fmtStat((r.fumble_recovery_yards_own ?? 0) + (r.fumble_recovery_yards_opp ?? 0)),
   },
-  c('TD', 'fumble_recovery_tds'),
 ]
 const KICKING_COLUMNS = [
-  { label: 'FG', render: (r) => `${fmtCount(r.fg_made)}/${fmtCount(r.fg_att)}` },
+  { label: 'FG', render: (r) => (r.fg_att ? `${fmtCount(r.fg_made)}/${r.fg_att}` : '—') },
   c('LNG', 'fg_long'),
-  { label: 'PAT', render: (r) => `${fmtCount(r.pat_made)}/${fmtCount(r.pat_att)}` },
+  { label: 'PAT', render: (r) => (r.pat_att ? `${fmtCount(r.pat_made)}/${r.pat_att}` : '—') },
 ]
 const PUNTING_COLUMNS = [
   c('PUNTS', 'pt_att'),
@@ -505,11 +513,12 @@ export default function GamePage() {
     (r) => (r.def_tackles_solo ?? 0) > 0 || (r.def_tackles_with_assist ?? 0) > 0 ||
       (r.def_sacks ?? 0) > 0 || (r.def_tackles_for_loss ?? 0) > 0 || (r.def_qb_hits ?? 0) > 0,
   )
-  const interceptions = byTeam(defense, (r) => (r.def_interceptions ?? 0) > 0)
-  const forcedFumbles = byTeam(defense, (r) => (r.def_fumbles_forced ?? 0) > 0)
-  const fumbleRecoveries = byTeam(
+  const takeaways = byTeam(
     defense,
-    (r) => (r.fumble_recovery_own ?? 0) + (r.fumble_recovery_opp ?? 0) > 0,
+    (r) =>
+      (r.def_interceptions ?? 0) > 0 ||
+      (r.def_fumbles_forced ?? 0) > 0 ||
+      (r.fumble_recovery_own ?? 0) + (r.fumble_recovery_opp ?? 0) > 0,
   )
   const kicking = byTeam(specialTeams, (r) => (r.fg_att ?? 0) > 0 || (r.pat_att ?? 0) > 0)
   const punting = byTeam(specialTeams, (r) => (r.pt_att ?? 0) > 0)
@@ -623,9 +632,7 @@ export default function GamePage() {
           <BoxScoreSection title="Rushing" columns={RUSHING_COLUMNS} awayRows={rushing.away} homeRows={rushing.home} awayAbbr={game.away_team} homeAbbr={game.home_team} />
           <BoxScoreSection title="Receiving" columns={RECEIVING_COLUMNS} awayRows={receiving.away} homeRows={receiving.home} awayAbbr={game.away_team} homeAbbr={game.home_team} />
           <BoxScoreSection title="Defense" columns={DEFENSE_COLUMNS} awayRows={tackling.away} homeRows={tackling.home} awayAbbr={game.away_team} homeAbbr={game.home_team} />
-          <BoxScoreSection title="Interceptions" columns={INTERCEPTIONS_COLUMNS} awayRows={interceptions.away} homeRows={interceptions.home} awayAbbr={game.away_team} homeAbbr={game.home_team} />
-          <BoxScoreSection title="Forced Fumbles" columns={FORCED_FUMBLES_COLUMNS} awayRows={forcedFumbles.away} homeRows={forcedFumbles.home} awayAbbr={game.away_team} homeAbbr={game.home_team} />
-          <BoxScoreSection title="Fumble Recoveries" columns={FUMBLE_RECOVERIES_COLUMNS} awayRows={fumbleRecoveries.away} homeRows={fumbleRecoveries.home} awayAbbr={game.away_team} homeAbbr={game.home_team} />
+          <BoxScoreSection title="Takeaways" columns={TAKEAWAYS_COLUMNS} awayRows={takeaways.away} homeRows={takeaways.home} awayAbbr={game.away_team} homeAbbr={game.home_team} />
           <BoxScoreSection title="Kicking" columns={KICKING_COLUMNS} awayRows={kicking.away} homeRows={kicking.home} awayAbbr={game.away_team} homeAbbr={game.home_team} />
           <BoxScoreSection title="Punting" columns={PUNTING_COLUMNS} awayRows={punting.away} homeRows={punting.home} awayAbbr={game.away_team} homeAbbr={game.home_team} />
           <BoxScoreSection title="Return" columns={RETURN_COLUMNS} awayRows={returns.away} homeRows={returns.home} awayAbbr={game.away_team} homeAbbr={game.home_team} />
