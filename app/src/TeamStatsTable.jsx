@@ -116,6 +116,13 @@ function compareRows(a, b, sortKey, sortDir, groups) {
   return sortDir === 'asc' ? result : -result
 }
 
+// A faint extra-thick divider after the 16th row of whatever's currently
+// sorted -- a quick visual split between the top and bottom half of the
+// league by that ranking, regardless of which stat it's sorted by.
+function midpointClass(index) {
+  return index === 15 ? 'border-b-2 border-neutral-300 dark:border-neutral-700' : ''
+}
+
 function SortIndicator({ active, dir }) {
   if (!active) return null
   return <span className="ml-1 text-[10px]">{dir === 'asc' ? '▲' : '▼'}</span>
@@ -205,8 +212,8 @@ function GroupedStatsTable({ rows, groups, sortKey, sortDir, groupByConference, 
           </tr>
         </thead>
         <tbody>
-          {sortedRows.map((r) => (
-            <tr key={r.team} className="border-b border-neutral-100 dark:border-neutral-900">
+          {sortedRows.map((r, i) => (
+            <tr key={r.team} className={`border-b border-neutral-100 dark:border-neutral-900 ${midpointClass(i)}`}>
               <td className="py-2 pr-2">
                 <TeamCell team={r.team} />
               </td>
@@ -287,8 +294,8 @@ function ShareStatsTable({ rows, sortKey, sortDir, groupByConference, onSort, on
           </tr>
         </thead>
         <tbody>
-          {sortedRows.map((r) => (
-            <tr key={r.team} className="border-b border-neutral-100 dark:border-neutral-900">
+          {sortedRows.map((r, i) => (
+            <tr key={r.team} className={`border-b border-neutral-100 dark:border-neutral-900 ${midpointClass(i)}`}>
               <td className="py-2 pr-2">
                 <TeamCell team={r.team} />
               </td>
