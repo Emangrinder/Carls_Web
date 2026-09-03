@@ -1,7 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { supabase } from './supabaseClient'
-import { CURRENT_TEAMS } from './constants'
+import { CURRENT_TEAMS, TEAM_COLORS } from './constants'
+
+const LOGO_BASE = `${import.meta.env.BASE_URL}logos/`
+const POSTSEASON_LABELS = { WC: 'WC', DIV: 'DIV', CON: 'CONF', SB: 'SB' }
 
 function fmtHeight(inches) {
   if (inches == null) return '—'
@@ -19,6 +22,15 @@ function fmtBirthDate(dateStr) {
   return new Date(`${dateStr}T00:00:00`).toLocaleDateString(undefined, {
     year: 'numeric',
     month: 'long',
+    day: 'numeric',
+  })
+}
+
+function fmtDate(dateStr) {
+  if (!dateStr) return '—'
+  return new Date(`${dateStr}T00:00:00`).toLocaleDateString(undefined, {
+    year: 'numeric',
+    month: 'short',
     day: 'numeric',
   })
 }
@@ -46,6 +58,19 @@ function initials(name) {
     .toUpperCase()
 }
 
+function hexToRgba(hex, alpha) {
+  const clean = hex.replace('#', '')
+  const n = parseInt(clean, 16)
+  const r = (n >> 16) & 255
+  const g = (n >> 8) & 255
+  const b = n & 255
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`
+}
+
+function weekLabel(row) {
+  return row.game_type === 'REG' ? `Wk ${row.week}` : (POSTSEASON_LABELS[row.game_type] ?? row.game_type)
+}
+
 // Sums a list of numeric fields across rows, treating null/undefined as
 // absent (not zero) so a field with no data anywhere renders as "—" rather
 // than "0".
@@ -62,32 +87,113 @@ function sumFields(rows, fields) {
   return totals
 }
 
-// Groups game-level (pro) or already season-level (college) rows by season,
-// sums the given numeric fields per season, and appends a career total row.
-function bySeasonWithCareerTotal(rows, seasonOf, fields) {
-  const bySeason = new Map()
+function groupBySeason(rows) {
+  const map = new Map()
   for (const row of rows) {
-    const season = seasonOf(row)
-    if (!bySeason.has(season)) bySeason.set(season, [])
-    bySeason.get(season).push(row)
+    if (!map.has(row.season)) map.set(row.season, [])
+    map.get(row.season).push(row)
   }
-  const seasons = [...bySeason.keys()].sort((a, b) => a - b)
-  const seasonRows = seasons.map((season) => ({
-    season,
-    games: bySeason.get(season).length,
-    ...sumFields(bySeason.get(season), fields),
-  }))
+  return map
+}
+
+// Builds season rows (newest season first) plus a trailing career-total
+// row, from a Map<season, gameRow[]> where each gameRow's rows within a
+// season are already in ascending-week order.
+function seasonAggregateRows(bySeasonMap, fields) {
+  const seasons = [...bySeasonMap.keys()].sort((a, b) => b - a)
+  const seasonRows = seasons.map((season) => {
+    const rows = bySeasonMap.get(season)
+    return {
+      season,
+      games: rows.length,
+      team: rows[rows.length - 1]?.team ?? null,
+      ...sumFields(rows, fields),
+    }
+  })
+  if (seasonRows.length === 0) return []
+  const allRows = [...bySeasonMap.values()].flat()
   const career = {
     season: 'Career',
-    games: rows.length,
+    games: allRows.length,
+    team: null,
+    ...sumFields(allRows, fields),
+    isTotal: true,
+  }
+  return [...seasonRows, career]
+}
+
+// The OL season/career rows built by seasonAggregateRows only sum
+// teamOffenseSnaps/sacksAllowed/qbHitsAllowed over the games this player
+// personally appeared in -- but "the team's total offensive snaps" and
+// "the team's sacks/QB hits allowed" for a season should reflect the whole
+// season (all the team's games that year), not just the ones this player
+// suited up for. This patches those three fields in place using full-season
+// team-level totals instead.
+function fixOLSeasonTotals(seasonRows, teamSeasonOffenseSnaps, teamSeasonAllowed) {
+  let careerSnaps = 0
+  let careerSacks = 0
+  let careerHits = 0
+  let anySnaps = false
+  let anyAllowed = false
+  const fixed = seasonRows.map((row) => {
+    if (row.isTotal) return row
+    const teamSnaps = teamSeasonOffenseSnaps.get(`${row.team}-${row.season}`) ?? null
+    const allowed = teamSeasonAllowed.get(`${row.team}-${row.season}`) ?? null
+    if (teamSnaps != null) {
+      careerSnaps += teamSnaps
+      anySnaps = true
+    }
+    if (allowed) {
+      careerSacks += allowed.sacks
+      careerHits += allowed.qb_hits
+      anyAllowed = true
+    }
+    return { ...row, teamOffenseSnaps: teamSnaps, sacksAllowed: allowed?.sacks ?? null, qbHitsAllowed: allowed?.qb_hits ?? null }
+  })
+  return fixed.map((row) =>
+    row.isTotal
+      ? {
+          ...row,
+          teamOffenseSnaps: anySnaps ? careerSnaps : null,
+          sacksAllowed: anyAllowed ? careerSacks : null,
+          qbHitsAllowed: anyAllowed ? careerHits : null,
+        }
+      : row,
+  )
+}
+
+// College stats are already one row per season (no per-game drilldown data
+// exists for them), so this just sorts newest-first and appends a total.
+function collegeCareerRows(rows, fields) {
+  if (rows.length === 0) return []
+  const sorted = [...rows].sort((a, b) => b.season - a.season)
+  const career = {
+    season: 'Career',
+    games: rows.reduce((sum, r) => sum + (r.games ?? 0), 0),
     ...sumFields(rows, fields),
     isTotal: true,
   }
-  return seasonRows.length > 0 ? [...seasonRows, career] : []
+  return [...sorted, career]
+}
+
+function flattenGameRows(rows, snapCountsByGameId, snapField) {
+  return rows.map((row) => ({
+    ...row,
+    season: row.games.season,
+    week: row.games.week,
+    game_type: row.games.game_type,
+    [snapField]: snapCountsByGameId.get(row.game_id)?.[snapField] ?? null,
+  }))
 }
 
 function fmtNum(n) {
-  return n == null ? '—' : n
+  return n == null || n === 0 ? '—' : n
+}
+
+// For "made/att"-style ratios, where showing a dash for a legitimate 0
+// would break the fraction's readability.
+function fmtRatioNum(n) {
+  return n ?? 0
 }
 
 function fmtPct(made, att) {
@@ -100,9 +206,151 @@ function fmtRate(yards, attempts) {
   return (yards / attempts).toFixed(1)
 }
 
+function TeamLogo({ abbr, size = 20 }) {
+  if (!abbr) return null
+  return (
+    <img
+      src={`${LOGO_BASE}${abbr}.png`}
+      alt={abbr}
+      className="shrink-0 object-contain"
+      style={{ height: `${size}px`, width: `${size}px` }}
+    />
+  )
+}
+
 // A season-by-season stat table with a bolded career-total footer row.
-// `columns` are {header, render(row)} pairs; `season` and `games` (labeled
-// "G") columns are always included ahead of them.
+// Non-career rows are clickable to expand a per-game breakdown when
+// `gamesBySeason` is provided. `columns` are {header, render(row)} pairs,
+// applied unchanged to both season-aggregate and per-game rows since the
+// underlying field names match.
+function ExpandableSeasonStatTable({ title, seasonRows, gamesBySeason, columns, snapKey }) {
+  const [expanded, setExpanded] = useState(() => new Set())
+  if (seasonRows.length === 0) return null
+
+  function toggle(season) {
+    setExpanded((prev) => {
+      const next = new Set(prev)
+      if (next.has(season)) next.delete(season)
+      else next.add(season)
+      return next
+    })
+  }
+
+  const totalCols = columns.length + 3 + (snapKey ? 1 : 0)
+
+  return (
+    <div className="mb-6">
+      <h3 className="mb-2 text-xs font-bold uppercase text-neutral-400">{title}</h3>
+      <div className="overflow-x-auto">
+        <table className="w-full border-collapse text-sm">
+          <thead>
+            <tr className="border-b border-neutral-200 text-left text-neutral-500 dark:border-neutral-800">
+              <th className="w-8 py-2"></th>
+              <th className="py-2 pr-3 font-medium">Season</th>
+              <th className="px-2 py-2 text-right font-medium">G</th>
+              {columns.map((col) => (
+                <th key={col.header} className="px-2 py-2 text-right font-medium">
+                  {col.header}
+                </th>
+              ))}
+              {snapKey && <th className="px-2 py-2 text-right font-medium">Snaps</th>}
+            </tr>
+          </thead>
+          <tbody>
+            {seasonRows.map((row, idx) => {
+              const isCareer = row.isTotal
+              const games = !isCareer ? gamesBySeason?.get(row.season) ?? [] : []
+              const isExpanded = expanded.has(row.season)
+              return (
+                <Fragment key={idx}>
+                  <tr
+                    onClick={!isCareer && games.length > 0 ? () => toggle(row.season) : undefined}
+                    className={`border-b border-neutral-100 dark:border-neutral-900 ${
+                      isCareer
+                        ? 'font-semibold text-neutral-900 dark:text-neutral-100'
+                        : games.length > 0
+                          ? 'cursor-pointer hover:bg-neutral-100 dark:hover:bg-neutral-900/60'
+                          : ''
+                    }`}
+                  >
+                    <td className="py-1.5">
+                      <TeamLogo abbr={row.team} size={20} />
+                    </td>
+                    <td className="py-1.5 pr-3">
+                      <span className="inline-flex items-center gap-1.5">
+                        {!isCareer && games.length > 0 && (
+                          <span className="text-[10px] text-neutral-400">{isExpanded ? '▾' : '▸'}</span>
+                        )}
+                        {row.season}
+                      </span>
+                    </td>
+                    <td className="px-2 py-1.5 text-right tabular-nums">{row.games}</td>
+                    {columns.map((col) => (
+                      <td key={col.header} className="px-2 py-1.5 text-right tabular-nums">
+                        {col.render(row)}
+                      </td>
+                    ))}
+                    {snapKey && (
+                      <td className="px-2 py-1.5 text-right tabular-nums">{fmtNum(row[snapKey])}</td>
+                    )}
+                  </tr>
+                  {isExpanded && games.length > 0 && (
+                    <tr className="border-b border-neutral-100 dark:border-neutral-900">
+                      <td colSpan={totalCols} className="bg-neutral-100/70 px-3 py-2 dark:bg-neutral-900/50">
+                        <table className="w-full border-collapse text-xs">
+                          <thead>
+                            <tr className="text-neutral-400">
+                              <th className="w-6"></th>
+                              <th className="py-1 pr-2 text-left font-medium">Wk</th>
+                              <th className="py-1 pr-2 text-left font-medium">Opp</th>
+                              {columns.map((col) => (
+                                <th key={col.header} className="px-2 py-1 text-right font-medium">
+                                  {col.header}
+                                </th>
+                              ))}
+                              {snapKey && <th className="px-2 py-1 text-right font-medium">Snaps</th>}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {games.map((g) => (
+                              <tr key={g.game_id} className="border-t border-neutral-200 dark:border-neutral-800">
+                                <td className="py-1">
+                                  <TeamLogo abbr={g.team} size={16} />
+                                </td>
+                                <td className="py-1 pr-2 whitespace-nowrap">{weekLabel(g)}</td>
+                                <td className="py-1 pr-2">
+                                  <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                                    <TeamLogo abbr={g.opponent_team} size={16} />
+                                    {g.opponent_team ?? '—'}
+                                  </span>
+                                </td>
+                                {columns.map((col) => (
+                                  <td key={col.header} className="px-2 py-1 text-right tabular-nums">
+                                    {col.render(g)}
+                                  </td>
+                                ))}
+                                {snapKey && (
+                                  <td className="px-2 py-1 text-right tabular-nums">{fmtNum(g[snapKey])}</td>
+                                )}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+// Simple non-expandable season table, used for college stats (no per-game
+// data exists for them).
 function SeasonStatTable({ title, rows, columns }) {
   if (rows.length === 0) return null
   return (
@@ -145,9 +393,11 @@ function SeasonStatTable({ title, rows, columns }) {
   )
 }
 
-const PASSING_FIELDS = ['completions', 'attempts', 'passing_yards', 'passing_tds', 'passing_interceptions']
+const PASSING_FIELDS = [
+  'completions', 'attempts', 'passing_yards', 'passing_tds', 'passing_interceptions', 'offense_snaps',
+]
 const PASSING_COLUMNS = [
-  { header: 'Cmp/Att', render: (r) => `${fmtNum(r.completions)}/${fmtNum(r.attempts)}` },
+  { header: 'Cmp/Att', render: (r) => `${fmtRatioNum(r.completions)}/${fmtRatioNum(r.attempts)}` },
   { header: 'Cmp%', render: (r) => fmtPct(r.completions, r.attempts) },
   { header: 'Yds', render: (r) => fmtNum(r.passing_yards) },
   { header: 'TD', render: (r) => fmtNum(r.passing_tds) },
@@ -156,7 +406,7 @@ const PASSING_COLUMNS = [
 
 const RUSH_REC_FIELDS = [
   'carries', 'rushing_yards', 'rushing_tds',
-  'targets', 'receptions', 'receiving_yards', 'receiving_tds',
+  'targets', 'receptions', 'receiving_yards', 'receiving_tds', 'offense_snaps',
 ]
 const RUSH_REC_COLUMNS = [
   { header: 'Car', render: (r) => fmtNum(r.carries) },
@@ -172,7 +422,7 @@ const RUSH_REC_COLUMNS = [
 const DEFENSE_FIELDS = [
   'def_tackles_solo', 'def_tackles_with_assist', 'def_tackles_for_loss',
   'def_sacks', 'def_qb_hits', 'def_interceptions', 'def_pass_defended',
-  'def_fumbles_forced', 'def_tds',
+  'def_fumbles_forced', 'def_tds', 'defense_snaps',
 ]
 const DEFENSE_COLUMNS = [
   { header: 'Solo', render: (r) => fmtNum(r.def_tackles_solo) },
@@ -186,15 +436,15 @@ const DEFENSE_COLUMNS = [
   { header: 'TD', render: (r) => fmtNum(r.def_tds) },
 ]
 
-const KICKING_FIELDS = ['fg_made', 'fg_att', 'fg_long', 'pat_made', 'pat_att']
+const KICKING_FIELDS = ['fg_made', 'fg_att', 'fg_long', 'pat_made', 'pat_att', 'st_snaps']
 const KICKING_COLUMNS = [
-  { header: 'FG', render: (r) => `${fmtNum(r.fg_made)}/${fmtNum(r.fg_att)}` },
+  { header: 'FG', render: (r) => `${fmtRatioNum(r.fg_made)}/${fmtRatioNum(r.fg_att)}` },
   { header: 'FG%', render: (r) => fmtPct(r.fg_made, r.fg_att) },
   { header: 'Long', render: (r) => fmtNum(r.fg_long) },
-  { header: 'PAT', render: (r) => `${fmtNum(r.pat_made)}/${fmtNum(r.pat_att)}` },
+  { header: 'PAT', render: (r) => `${fmtRatioNum(r.pat_made)}/${fmtRatioNum(r.pat_att)}` },
 ]
 
-const PUNTING_FIELDS = ['pt_att', 'pt_yards', 'pt_net_yards', 'pt_long']
+const PUNTING_FIELDS = ['pt_att', 'pt_yards', 'pt_net_yards', 'pt_long', 'st_snaps']
 const PUNTING_COLUMNS = [
   { header: 'Punts', render: (r) => fmtNum(r.pt_att) },
   { header: 'Yds', render: (r) => fmtNum(r.pt_yards) },
@@ -203,7 +453,7 @@ const PUNTING_COLUMNS = [
   { header: 'Long', render: (r) => fmtNum(r.pt_long) },
 ]
 
-const RETURNS_FIELDS = ['punt_returns', 'punt_return_yards', 'kickoff_returns', 'kickoff_return_yards']
+const RETURNS_FIELDS = ['punt_returns', 'punt_return_yards', 'kickoff_returns', 'kickoff_return_yards', 'st_snaps']
 const RETURNS_COLUMNS = [
   { header: 'PR', render: (r) => fmtNum(r.punt_returns) },
   { header: 'PR Yds', render: (r) => fmtNum(r.punt_return_yards) },
@@ -215,8 +465,8 @@ const RETURNS_COLUMNS = [
 // unlike depth_chart_ranks' side-specific abbreviations (LT/LG/C/RG/RT).
 const OL_POSITIONS = new Set(['OT', 'G', 'C', 'T', 'OL', 'LT', 'RT', 'LG', 'RG'])
 const OL_DEPTH_ABBRS = new Set(['LT', 'LG', 'C', 'RG', 'RT'])
+const OL_FIELDS = ['snaps', 'teamOffenseSnaps', 'sacksAllowed', 'qbHitsAllowed']
 const OL_COLUMNS = [
-  { header: 'Team', render: (r) => r.team ?? '—' },
   { header: 'Snaps', render: (r) => fmtNum(r.snaps) },
   { header: 'Snap %', render: (r) => (r.teamOffenseSnaps ? `${((r.snaps / r.teamOffenseSnaps) * 100).toFixed(1)}%` : '—') },
   { header: 'Team Sacks Allowed', render: (r) => fmtNum(r.sacksAllowed) },
@@ -230,7 +480,7 @@ const COLLEGE_FIELDS = [
   'fg_made', 'fg_att',
 ]
 const COLLEGE_PASSING_COLUMNS = [
-  { header: 'Cmp/Att', render: (r) => `${fmtNum(r.pass_comp)}/${fmtNum(r.pass_att)}` },
+  { header: 'Cmp/Att', render: (r) => `${fmtRatioNum(r.pass_comp)}/${fmtRatioNum(r.pass_att)}` },
   { header: 'Pass Yds', render: (r) => fmtNum(r.pass_yds) },
   { header: 'Pass TD', render: (r) => fmtNum(r.pass_td) },
   { header: 'INT', render: (r) => fmtNum(r.pass_int) },
@@ -252,7 +502,7 @@ const COLLEGE_DEFENSE_COLUMNS = [
   { header: 'PBU', render: (r) => fmtNum(r.def_pbu) },
 ]
 const COLLEGE_KICKING_COLUMNS = [
-  { header: 'FG', render: (r) => `${fmtNum(r.fg_made)}/${fmtNum(r.fg_att)}` },
+  { header: 'FG', render: (r) => `${fmtRatioNum(r.fg_made)}/${fmtRatioNum(r.fg_att)}` },
   { header: 'FG%', render: (r) => fmtPct(r.fg_made, r.fg_att) },
 ]
 
@@ -260,6 +510,35 @@ const INJURY_STATUS_STYLES = {
   Out: 'border-red-400 bg-red-50 text-red-600 dark:border-red-700 dark:bg-red-950/40 dark:text-red-400',
   Doubtful: 'border-orange-400 bg-orange-50 text-orange-600 dark:border-orange-700 dark:bg-orange-950/40 dark:text-orange-400',
   Questionable: 'border-yellow-400 bg-yellow-50 text-yellow-600 dark:border-yellow-700 dark:bg-yellow-950/40 dark:text-yellow-500',
+}
+
+// Weekly injury reports repeat the same status/injury for as long as it's
+// active; collapse consecutive identical weeks (within a season) into one
+// event with a week range, so this reads as history rather than a report log.
+function collapseInjuryEvents(rows) {
+  const events = []
+  for (const row of rows) {
+    const last = events[events.length - 1]
+    const sameEvent =
+      last &&
+      last.season === row.season &&
+      last.report_status === row.report_status &&
+      last.report_primary_injury === row.report_primary_injury &&
+      row.week === last.weekEnd + 1
+    if (sameEvent) {
+      last.weekEnd = row.week
+    } else {
+      events.push({
+        season: row.season,
+        weekStart: row.week,
+        weekEnd: row.week,
+        report_status: row.report_status,
+        report_primary_injury: row.report_primary_injury,
+        report_secondary_injury: row.report_secondary_injury,
+      })
+    }
+  }
+  return events.reverse()
 }
 
 export default function PlayerPage() {
@@ -270,10 +549,12 @@ export default function PlayerPage() {
   const [offenseRows, setOffenseRows] = useState([])
   const [defenseRows, setDefenseRows] = useState([])
   const [specialTeamsRows, setSpecialTeamsRows] = useState([])
+  const [snapCountsRaw, setSnapCountsRaw] = useState([])
   const [collegeSeasons, setCollegeSeasons] = useState([])
   const [collegeRoster, setCollegeRoster] = useState(null)
-  const [snapSeasons, setSnapSeasons] = useState([])
-  const [teamSeasonStats, setTeamSeasonStats] = useState([])
+  const [teamGameStatsRows, setTeamGameStatsRows] = useState([])
+  const [injuryHistory, setInjuryHistory] = useState([])
+  const [trades, setTrades] = useState([])
   const [teams, setTeams] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -305,6 +586,12 @@ export default function PlayerPage() {
         .eq('player_id', playerId)
         .order('season', { foreignTable: 'games' })
         .order('week', { foreignTable: 'games' }),
+      supabase
+        .from('player_snap_counts')
+        .select('*, games!inner(season, week, game_type)')
+        .eq('player_id', playerId)
+        .order('season', { foreignTable: 'games' })
+        .order('week', { foreignTable: 'games' }),
       supabase.from('college_player_season_stats').select('*').eq('player_id', playerId).order('season'),
       supabase
         .from('college_rosters')
@@ -313,7 +600,8 @@ export default function PlayerPage() {
         .order('season', { ascending: false })
         .limit(1)
         .maybeSingle(),
-      supabase.from('player_season_snap_counts').select('*').eq('player_id', playerId).order('season'),
+      supabase.from('injuries').select('*').eq('player_id', playerId).order('season').order('week'),
+      supabase.from('trades').select('*').eq('player_id', playerId).order('trade_date', { ascending: false }),
       supabase.from('teams').select('team_abbr, team_name').in('team_abbr', CURRENT_TEAMS),
     ]).then(
       ([
@@ -323,9 +611,11 @@ export default function PlayerPage() {
         offenseRes,
         defenseRes,
         specialRes,
+        snapCountsRes,
         collegeSeasonsRes,
         collegeRosterRes,
-        snapSeasonsRes,
+        injuryHistoryRes,
+        tradesRes,
         teamsRes,
       ]) => {
         if (cancelled) return
@@ -336,9 +626,11 @@ export default function PlayerPage() {
           offenseRes.error ||
           defenseRes.error ||
           specialRes.error ||
+          snapCountsRes.error ||
           collegeSeasonsRes.error ||
           collegeRosterRes.error ||
-          snapSeasonsRes.error ||
+          injuryHistoryRes.error ||
+          tradesRes.error ||
           teamsRes.error
         if (err) {
           setError(err.message)
@@ -351,30 +643,34 @@ export default function PlayerPage() {
         setOffenseRows(offenseRes.data)
         setDefenseRows(defenseRes.data)
         setSpecialTeamsRows(specialRes.data)
+        setSnapCountsRaw(snapCountsRes.data)
         setCollegeSeasons(collegeSeasonsRes.data)
         setCollegeRoster(collegeRosterRes.data)
-        setSnapSeasons(snapSeasonsRes.data)
+        setInjuryHistory(injuryHistoryRes.data)
+        setTrades(tradesRes.data)
         setTeams(teamsRes.data)
 
-        // Team-level context (offensive snaps run, sacks/QB hits allowed) for
-        // whichever (team, season) pairs this player actually has snap
-        // counts in -- fetched as a follow-up query since we don't know the
-        // pairs until the snap-count rows above come back.
-        const involvedTeams = [...new Set(snapSeasonsRes.data.map((r) => r.team))]
-        const involvedSeasons = [...new Set(snapSeasonsRes.data.map((r) => r.season))]
+        // Team-level per-game context (offensive snaps run, sacks/QB hits
+        // allowed) for the OL section -- fetched as a follow-up query since
+        // we don't know which teams/seasons are involved until the
+        // snap-count rows above come back. Pulls both perspectives (team's
+        // own row and the row where they're the opponent) for every
+        // relevant game in one shot.
+        const involvedTeams = [...new Set(snapCountsRes.data.map((r) => r.team))]
+        const involvedSeasons = [...new Set(snapCountsRes.data.map((r) => r.games.season))]
         if (involvedTeams.length === 0) {
           setLoading(false)
           return
         }
         supabase
-          .from('team_season_stats')
-          .select('team, season, offense_snaps_avg, games_played, sacks_allowed, qb_hits_allowed')
-          .in('team', involvedTeams)
+          .from('team_game_stats')
+          .select('game_id, team, opponent_team, season, sacks, qb_hits, offense_snaps')
+          .or(`team.in.(${involvedTeams.join(',')}),opponent_team.in.(${involvedTeams.join(',')})`)
           .in('season', involvedSeasons)
           .then(({ data, error: teamStatsError }) => {
             if (cancelled) return
             if (teamStatsError) setError(teamStatsError.message)
-            else setTeamSeasonStats(data)
+            else setTeamGameStatsRows(data)
             setLoading(false)
           })
       },
@@ -387,78 +683,93 @@ export default function PlayerPage() {
 
   const teamsByAbbr = useMemo(() => new Map(teams.map((t) => [t.team_abbr, t])), [teams])
 
-  const passingSeasons = useMemo(
-    () => bySeasonWithCareerTotal(offenseRows, (r) => r.games.season, PASSING_FIELDS),
-    [offenseRows],
+  const snapCountsByGameId = useMemo(() => new Map(snapCountsRaw.map((r) => [r.game_id, r])), [snapCountsRaw])
+
+  const offenseRowsAugmented = useMemo(
+    () => flattenGameRows(offenseRows, snapCountsByGameId, 'offense_snaps'),
+    [offenseRows, snapCountsByGameId],
   )
-  const rushRecSeasons = useMemo(
-    () => bySeasonWithCareerTotal(offenseRows, (r) => r.games.season, RUSH_REC_FIELDS),
-    [offenseRows],
+  const defenseRowsAugmented = useMemo(
+    () => flattenGameRows(defenseRows, snapCountsByGameId, 'defense_snaps'),
+    [defenseRows, snapCountsByGameId],
   )
-  const defenseSeasons = useMemo(
-    () => bySeasonWithCareerTotal(defenseRows, (r) => r.games.season, DEFENSE_FIELDS),
-    [defenseRows],
+  const specialTeamsRowsAugmented = useMemo(
+    () => flattenGameRows(specialTeamsRows, snapCountsByGameId, 'st_snaps'),
+    [specialTeamsRows, snapCountsByGameId],
   )
-  const kickingSeasons = useMemo(
-    () => bySeasonWithCareerTotal(specialTeamsRows, (r) => r.games.season, KICKING_FIELDS),
-    [specialTeamsRows],
-  )
-  const puntingSeasons = useMemo(
-    () => bySeasonWithCareerTotal(specialTeamsRows, (r) => r.games.season, PUNTING_FIELDS),
-    [specialTeamsRows],
-  )
-  const returnsSeasons = useMemo(
-    () => bySeasonWithCareerTotal(specialTeamsRows, (r) => r.games.season, RETURNS_FIELDS),
-    [specialTeamsRows],
-  )
-  const collegeCareer = useMemo(
-    () => bySeasonWithCareerTotal(collegeSeasons, (r) => r.season, COLLEGE_FIELDS),
-    [collegeSeasons],
-  )
+
+  const offenseBySeason = useMemo(() => groupBySeason(offenseRowsAugmented), [offenseRowsAugmented])
+  const defenseBySeason = useMemo(() => groupBySeason(defenseRowsAugmented), [defenseRowsAugmented])
+  const specialTeamsBySeason = useMemo(() => groupBySeason(specialTeamsRowsAugmented), [specialTeamsRowsAugmented])
+
+  const passingSeasons = useMemo(() => seasonAggregateRows(offenseBySeason, PASSING_FIELDS), [offenseBySeason])
+  const rushRecSeasons = useMemo(() => seasonAggregateRows(offenseBySeason, RUSH_REC_FIELDS), [offenseBySeason])
+  const defenseSeasons = useMemo(() => seasonAggregateRows(defenseBySeason, DEFENSE_FIELDS), [defenseBySeason])
+  const kickingSeasons = useMemo(() => seasonAggregateRows(specialTeamsBySeason, KICKING_FIELDS), [specialTeamsBySeason])
+  const puntingSeasons = useMemo(() => seasonAggregateRows(specialTeamsBySeason, PUNTING_FIELDS), [specialTeamsBySeason])
+  const returnsSeasons = useMemo(() => seasonAggregateRows(specialTeamsBySeason, RETURNS_FIELDS), [specialTeamsBySeason])
+
+  const collegeCareer = useMemo(() => collegeCareerRows(collegeSeasons, COLLEGE_FIELDS), [collegeSeasons])
 
   const isOffensiveLine =
-    OL_POSITIONS.has(player?.position) ||
-    depthChart.some((p) => OL_DEPTH_ABBRS.has(p.position_abbr))
+    OL_POSITIONS.has(player?.position) || depthChart.some((p) => OL_DEPTH_ABBRS.has(p.position_abbr))
 
-  const teamSeasonStatsByKey = useMemo(
-    () => new Map(teamSeasonStats.map((s) => [`${s.team}-${s.season}`, s])),
-    [teamSeasonStats],
+  const ownTeamGameRow = useMemo(
+    () => new Map(teamGameStatsRows.map((r) => [`${r.game_id}-${r.team}`, r])),
+    [teamGameStatsRows],
   )
-  const olSeasons = useMemo(() => {
-    const seasonRows = snapSeasons
-      .filter((s) => (s.offense_snaps ?? 0) > 0)
-      .map((s) => {
-        const teamStats = teamSeasonStatsByKey.get(`${s.team}-${s.season}`)
-        const teamOffenseSnaps = teamStats
-          ? Math.round(teamStats.offense_snaps_avg * teamStats.games_played)
-          : null
-        return {
-          season: s.season,
-          games: s.games,
-          team: s.team,
-          snaps: s.offense_snaps,
-          teamOffenseSnaps,
-          sacksAllowed: teamStats?.sacks_allowed ?? null,
-          qbHitsAllowed: teamStats?.qb_hits_allowed ?? null,
-        }
-      })
-    if (seasonRows.length === 0) return []
-    const totalSnaps = seasonRows.reduce((sum, r) => sum + r.snaps, 0)
-    const totalTeamOffenseSnaps = seasonRows.reduce((sum, r) => sum + (r.teamOffenseSnaps ?? 0), 0)
-    const totalSacksAllowed = seasonRows.reduce((sum, r) => sum + (r.sacksAllowed ?? 0), 0)
-    const totalQbHitsAllowed = seasonRows.reduce((sum, r) => sum + (r.qbHitsAllowed ?? 0), 0)
-    const career = {
-      season: 'Career',
-      games: seasonRows.reduce((sum, r) => sum + r.games, 0),
-      team: null,
-      snaps: totalSnaps,
-      teamOffenseSnaps: totalTeamOffenseSnaps || null,
-      sacksAllowed: totalSacksAllowed,
-      qbHitsAllowed: totalQbHitsAllowed,
-      isTotal: true,
+  const allowedByGameTeam = useMemo(() => {
+    const map = new Map()
+    for (const r of teamGameStatsRows) map.set(`${r.game_id}-${r.opponent_team}`, { sacks: r.sacks, qb_hits: r.qb_hits })
+    return map
+  }, [teamGameStatsRows])
+
+  const olGameRows = useMemo(
+    () =>
+      snapCountsRaw
+        .filter((r) => (r.offense_snaps ?? 0) > 0)
+        .map((r) => {
+          const own = ownTeamGameRow.get(`${r.game_id}-${r.team}`)
+          const allowed = allowedByGameTeam.get(`${r.game_id}-${r.team}`)
+          return {
+            season: r.games.season,
+            week: r.games.week,
+            game_type: r.games.game_type,
+            game_id: r.game_id,
+            team: r.team,
+            opponent_team: own?.opponent_team ?? null,
+            snaps: r.offense_snaps,
+            teamOffenseSnaps: own?.offense_snaps ?? null,
+            sacksAllowed: allowed?.sacks ?? null,
+            qbHitsAllowed: allowed?.qb_hits ?? null,
+          }
+        }),
+    [snapCountsRaw, ownTeamGameRow, allowedByGameTeam],
+  )
+  const olBySeason = useMemo(() => groupBySeason(olGameRows), [olGameRows])
+  const teamSeasonOffenseSnaps = useMemo(() => {
+    const map = new Map()
+    for (const r of teamGameStatsRows) {
+      const key = `${r.team}-${r.season}`
+      map.set(key, (map.get(key) ?? 0) + (r.offense_snaps ?? 0))
     }
-    return [...seasonRows, career]
-  }, [snapSeasons, teamSeasonStatsByKey])
+    return map
+  }, [teamGameStatsRows])
+  const teamSeasonAllowed = useMemo(() => {
+    const map = new Map()
+    for (const r of teamGameStatsRows) {
+      const key = `${r.opponent_team}-${r.season}`
+      const cur = map.get(key) ?? { sacks: 0, qb_hits: 0 }
+      cur.sacks += r.sacks ?? 0
+      cur.qb_hits += r.qb_hits ?? 0
+      map.set(key, cur)
+    }
+    return map
+  }, [teamGameStatsRows])
+  const olSeasons = useMemo(
+    () => fixOLSeasonTotals(seasonAggregateRows(olBySeason, OL_FIELDS), teamSeasonOffenseSnaps, teamSeasonAllowed),
+    [olBySeason, teamSeasonOffenseSnaps, teamSeasonAllowed],
+  )
   const hasOL = isOffensiveLine && olSeasons.length > 0
 
   const hasPassing = passingSeasons.some((r) => (r.attempts ?? 0) > 0)
@@ -475,6 +786,8 @@ export default function PlayerPage() {
   )
   const hasCollegeKicking = collegeCareer.some((r) => (r.fg_att ?? 0) > 0)
 
+  const injuryEvents = useMemo(() => collapseInjuryEvents(injuryHistory), [injuryHistory])
+
   if (loading) return <p className="p-6 text-sm text-neutral-500">Loading…</p>
   if (error) return <p className="p-6 text-sm text-red-500">Error: {error}</p>
   if (!player) return <p className="p-6 text-sm text-neutral-500">Player not found.</p>
@@ -486,120 +799,271 @@ export default function PlayerPage() {
   const injuryStyle = injury?.report_status ? INJURY_STATUS_STYLES[injury.report_status] : null
   const photoUrl = player.headshot_url || collegeRoster?.headshot_url || null
 
+  const teamColors = currentTeamAbbr ? TEAM_COLORS[currentTeamAbbr] : null
+  const pageStyle = teamColors
+    ? {
+        backgroundImage: `linear-gradient(160deg, ${hexToRgba(teamColors.primary, 0.16)} 0%, transparent 45%, ${hexToRgba(teamColors.secondary, 0.14)} 100%)`,
+      }
+    : undefined
+
   return (
-    <div className="mx-auto w-full max-w-4xl px-4 py-6">
-      {/* Header: photo, name, position/team, bio */}
-      <div className="mb-8 flex flex-col gap-6 sm:flex-row sm:items-start">
-        {photoUrl ? (
-          <img
-            src={photoUrl}
-            alt={player.display_name}
-            className="h-32 w-32 shrink-0 rounded-lg border border-neutral-200 object-cover dark:border-neutral-800"
-          />
-        ) : (
-          <div className="flex h-32 w-32 shrink-0 items-center justify-center rounded-lg border border-neutral-200 bg-neutral-100 text-3xl font-semibold text-neutral-400 dark:border-neutral-800 dark:bg-neutral-800 dark:text-neutral-500">
-            {initials(player.display_name)}
+    <div className="min-h-full w-full" style={pageStyle}>
+      <div className="mx-auto w-full max-w-4xl px-4 py-6">
+        {/* Header: photo, name, position/team, bio */}
+        <div className="mb-8 flex flex-col gap-6 sm:flex-row sm:items-start">
+          {photoUrl ? (
+            <img
+              src={photoUrl}
+              alt={player.display_name}
+              className="h-32 w-32 shrink-0 rounded-lg border border-neutral-200 object-cover dark:border-neutral-800"
+            />
+          ) : (
+            <div className="flex h-32 w-32 shrink-0 items-center justify-center rounded-lg border border-neutral-200 bg-neutral-100 text-3xl font-semibold text-neutral-400 dark:border-neutral-800 dark:bg-neutral-800 dark:text-neutral-500">
+              {initials(player.display_name)}
+            </div>
+          )}
+
+          <div className="min-w-0 flex-1">
+            <div className="mb-1 flex flex-wrap items-center gap-2">
+              <h1 className="text-2xl font-semibold text-neutral-900 dark:text-neutral-100">
+                {player.display_name}
+              </h1>
+              {player.jersey_number != null && (
+                <span className="text-lg text-neutral-400">#{player.jersey_number}</span>
+              )}
+            </div>
+
+            <div className="mb-3 flex flex-wrap items-center gap-2 text-sm text-neutral-600 dark:text-neutral-300">
+              {depthChart[0] && <span className="font-medium">{depthChart[0].position_abbr}</span>}
+              {!depthChart[0] && player.position && <span className="font-medium">{player.position}</span>}
+              {currentTeamAbbr && (
+                <Link to={`/team/${currentTeamAbbr}`} className="flex items-center gap-1.5 hover:underline">
+                  <TeamLogo abbr={currentTeamAbbr} size={20} />
+                  {currentTeam?.team_name ?? currentTeamAbbr}
+                </Link>
+              )}
+              {depthChart[0] && (
+                <span className="rounded border border-neutral-200 px-1.5 py-0.5 text-xs text-neutral-500 dark:border-neutral-800">
+                  {depthChart[0].position_abbr}
+                  {depthChart[0].rank}
+                </span>
+              )}
+              {injuryStyle && (
+                <span className={`rounded border px-1.5 py-0.5 text-xs font-medium ${injuryStyle}`}>
+                  {injury.report_status}
+                  {injury.report_primary_injury ? ` — ${injury.report_primary_injury}` : ''}
+                </span>
+              )}
+            </div>
+
+            <dl className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm sm:grid-cols-3">
+              <div>
+                <dt className="text-neutral-400">Height</dt>
+                <dd className="text-neutral-800 dark:text-neutral-200">{fmtHeight(player.height)}</dd>
+              </div>
+              <div>
+                <dt className="text-neutral-400">Weight</dt>
+                <dd className="text-neutral-800 dark:text-neutral-200">{fmtWeight(player.weight)}</dd>
+              </div>
+              <div>
+                <dt className="text-neutral-400">College</dt>
+                <dd className="text-neutral-800 dark:text-neutral-200">{player.college_name ?? '—'}</dd>
+              </div>
+              <div>
+                <dt className="text-neutral-400">Born</dt>
+                <dd className="text-neutral-800 dark:text-neutral-200">
+                  {fmtBirthDate(player.birth_date) ?? '—'}
+                  {ageFromBirthDate(player.birth_date) != null ? ` (${ageFromBirthDate(player.birth_date)})` : ''}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-neutral-400">Rookie Season</dt>
+                <dd className="text-neutral-800 dark:text-neutral-200">{player.rookie_season ?? '—'}</dd>
+              </div>
+            </dl>
           </div>
+        </div>
+
+        {/* NFL career */}
+        <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-neutral-500">NFL Career</h2>
+        {!hasOL && !hasPassing && !hasRushRec && !hasDefense && !hasKicking && !hasPunting && !hasReturns && (
+          <p className="mb-6 text-sm text-neutral-400">No NFL stats on record.</p>
+        )}
+        {hasOL && (
+          <ExpandableSeasonStatTable title="Offensive Line" seasonRows={olSeasons} gamesBySeason={olBySeason} columns={OL_COLUMNS} />
+        )}
+        {hasPassing && (
+          <ExpandableSeasonStatTable
+            title="Passing"
+            seasonRows={passingSeasons}
+            gamesBySeason={offenseBySeason}
+            columns={PASSING_COLUMNS}
+            snapKey="offense_snaps"
+          />
+        )}
+        {hasRushRec && (
+          <ExpandableSeasonStatTable
+            title="Rushing & Receiving"
+            seasonRows={rushRecSeasons}
+            gamesBySeason={offenseBySeason}
+            columns={RUSH_REC_COLUMNS}
+            snapKey="offense_snaps"
+          />
+        )}
+        {hasDefense && (
+          <ExpandableSeasonStatTable
+            title="Defense"
+            seasonRows={defenseSeasons}
+            gamesBySeason={defenseBySeason}
+            columns={DEFENSE_COLUMNS}
+            snapKey="defense_snaps"
+          />
+        )}
+        {hasKicking && (
+          <ExpandableSeasonStatTable
+            title="Kicking"
+            seasonRows={kickingSeasons}
+            gamesBySeason={specialTeamsBySeason}
+            columns={KICKING_COLUMNS}
+            snapKey="st_snaps"
+          />
+        )}
+        {hasPunting && (
+          <ExpandableSeasonStatTable
+            title="Punting"
+            seasonRows={puntingSeasons}
+            gamesBySeason={specialTeamsBySeason}
+            columns={PUNTING_COLUMNS}
+            snapKey="st_snaps"
+          />
+        )}
+        {hasReturns && (
+          <ExpandableSeasonStatTable
+            title="Returns"
+            seasonRows={returnsSeasons}
+            gamesBySeason={specialTeamsBySeason}
+            columns={RETURNS_COLUMNS}
+            snapKey="st_snaps"
+          />
         )}
 
-        <div className="min-w-0 flex-1">
-          <div className="mb-1 flex flex-wrap items-center gap-2">
-            <h1 className="text-2xl font-semibold text-neutral-900 dark:text-neutral-100">
-              {player.display_name}
-            </h1>
-            {player.jersey_number != null && (
-              <span className="text-lg text-neutral-400">#{player.jersey_number}</span>
+        {/* College career */}
+        {collegeCareer.length > 0 && (
+          <>
+            <h2 className="mb-2 mt-4 text-sm font-semibold uppercase tracking-wide text-neutral-500">
+              College Career
+            </h2>
+            {hasCollegePassing && (
+              <SeasonStatTable title="Passing" rows={collegeCareer} columns={COLLEGE_PASSING_COLUMNS} />
             )}
-          </div>
+            {hasCollegeRushRec && (
+              <SeasonStatTable title="Rushing & Receiving" rows={collegeCareer} columns={COLLEGE_RUSH_REC_COLUMNS} />
+            )}
+            {hasCollegeDefense && (
+              <SeasonStatTable title="Defense" rows={collegeCareer} columns={COLLEGE_DEFENSE_COLUMNS} />
+            )}
+            {hasCollegeKicking && (
+              <SeasonStatTable title="Kicking" rows={collegeCareer} columns={COLLEGE_KICKING_COLUMNS} />
+            )}
+          </>
+        )}
 
-          <div className="mb-3 flex flex-wrap items-center gap-2 text-sm text-neutral-600 dark:text-neutral-300">
-            {depthChart[0] && <span className="font-medium">{depthChart[0].position_abbr}</span>}
-            {!depthChart[0] && player.position && <span className="font-medium">{player.position}</span>}
-            {currentTeamAbbr && (
-              <Link to={`/team/${currentTeamAbbr}`} className="flex items-center gap-1.5 hover:underline">
-                <img
-                  src={`${import.meta.env.BASE_URL}logos/${currentTeamAbbr}.png`}
-                  alt={currentTeamAbbr}
-                  className="h-5 w-5 object-contain"
-                />
-                {currentTeam?.team_name ?? currentTeamAbbr}
-              </Link>
-            )}
-            {depthChart[0] && (
-              <span className="rounded border border-neutral-200 px-1.5 py-0.5 text-xs text-neutral-500 dark:border-neutral-800">
-                {depthChart[0].position_abbr}
-                {depthChart[0].rank}
-              </span>
-            )}
-            {injuryStyle && (
-              <span className={`rounded border px-1.5 py-0.5 text-xs font-medium ${injuryStyle}`}>
-                {injury.report_status}
-                {injury.report_primary_injury ? ` — ${injury.report_primary_injury}` : ''}
-              </span>
-            )}
-          </div>
+        {/* Injury & transaction history */}
+        <h2 className="mb-2 mt-4 text-sm font-semibold uppercase tracking-wide text-neutral-500">
+          Injury &amp; Transaction History
+        </h2>
+        <div className="mb-6">
+          <h3 className="mb-2 text-xs font-bold uppercase text-neutral-400">Injury Reports</h3>
+          {injuryEvents.length === 0 ? (
+            <p className="text-sm text-neutral-400">No injury history on record.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse text-sm">
+                <thead>
+                  <tr className="border-b border-neutral-200 text-left text-neutral-500 dark:border-neutral-800">
+                    <th className="py-2 pr-3 font-medium">Season</th>
+                    <th className="py-2 pr-3 font-medium">Weeks</th>
+                    <th className="py-2 pr-3 font-medium">Status</th>
+                    <th className="py-2 font-medium">Injury</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {injuryEvents.map((ev, idx) => (
+                    <tr key={idx} className="border-b border-neutral-100 dark:border-neutral-900">
+                      <td className="py-1.5 pr-3">{ev.season}</td>
+                      <td className="py-1.5 pr-3 tabular-nums">
+                        {ev.weekStart === ev.weekEnd ? `Wk ${ev.weekStart}` : `Wk ${ev.weekStart}–${ev.weekEnd}`}
+                      </td>
+                      <td className="py-1.5 pr-3">
+                        <span
+                          className={`rounded border px-1.5 py-0.5 text-xs font-medium ${
+                            INJURY_STATUS_STYLES[ev.report_status] ?? 'border-neutral-200 text-neutral-500 dark:border-neutral-800'
+                          }`}
+                        >
+                          {ev.report_status ?? '—'}
+                        </span>
+                      </td>
+                      <td className="py-1.5 text-neutral-700 dark:text-neutral-300">
+                        {ev.report_primary_injury ?? '—'}
+                        {ev.report_secondary_injury ? ` / ${ev.report_secondary_injury}` : ''}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
 
-          <dl className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm sm:grid-cols-3">
-            <div>
-              <dt className="text-neutral-400">Height</dt>
-              <dd className="text-neutral-800 dark:text-neutral-200">{fmtHeight(player.height)}</dd>
+        <div className="mb-6">
+          <h3 className="mb-2 text-xs font-bold uppercase text-neutral-400">Transactions</h3>
+          {trades.length === 0 ? (
+            <p className="text-sm text-neutral-400">No trade history on record.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse text-sm">
+                <thead>
+                  <tr className="border-b border-neutral-200 text-left text-neutral-500 dark:border-neutral-800">
+                    <th className="py-2 pr-3 font-medium">Date</th>
+                    <th className="py-2 pr-3 font-medium">Teams</th>
+                    <th className="py-2 font-medium">Detail</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {trades.map((t) => {
+                    // A trade row with a draft pick attached means this player
+                    // wasn't personally traded -- the PICK that later became
+                    // him was, before he existed on any NFL roster.
+                    const isPickLineage = t.pick_round != null
+                    return (
+                      <tr
+                        key={`${t.trade_id}-${t.gave_team}-${t.received_team}`}
+                        className="border-b border-neutral-100 dark:border-neutral-900"
+                      >
+                        <td className="py-1.5 pr-3 whitespace-nowrap">{fmtDate(t.trade_date)}</td>
+                        <td className="py-1.5 pr-3">
+                          <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                            <TeamLogo abbr={t.gave_team} size={20} />
+                            {t.gave_team}
+                            <span className="text-neutral-400">→</span>
+                            <TeamLogo abbr={t.received_team} size={20} />
+                            {t.received_team}
+                          </span>
+                        </td>
+                        <td className="py-1.5 text-neutral-700 dark:text-neutral-300">
+                          {isPickLineage
+                            ? `Draft pick traded (${t.pick_season} Rd ${t.pick_round}, Pick ${t.pick_number}) — later used to select this player${t.conditional ? ', conditional' : ''}`
+                            : `Player traded directly${t.conditional ? ' (conditional)' : ''}`}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
             </div>
-            <div>
-              <dt className="text-neutral-400">Weight</dt>
-              <dd className="text-neutral-800 dark:text-neutral-200">{fmtWeight(player.weight)}</dd>
-            </div>
-            <div>
-              <dt className="text-neutral-400">College</dt>
-              <dd className="text-neutral-800 dark:text-neutral-200">{player.college_name ?? '—'}</dd>
-            </div>
-            <div>
-              <dt className="text-neutral-400">Born</dt>
-              <dd className="text-neutral-800 dark:text-neutral-200">
-                {fmtBirthDate(player.birth_date) ?? '—'}
-                {ageFromBirthDate(player.birth_date) != null ? ` (${ageFromBirthDate(player.birth_date)})` : ''}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-neutral-400">Rookie Season</dt>
-              <dd className="text-neutral-800 dark:text-neutral-200">{player.rookie_season ?? '—'}</dd>
-            </div>
-          </dl>
+          )}
         </div>
       </div>
-
-      {/* NFL career */}
-      <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-neutral-500">NFL Career</h2>
-      {!hasOL && !hasPassing && !hasRushRec && !hasDefense && !hasKicking && !hasPunting && !hasReturns && (
-        <p className="mb-6 text-sm text-neutral-400">No NFL stats on record.</p>
-      )}
-      {hasOL && <SeasonStatTable title="Offensive Line" rows={olSeasons} columns={OL_COLUMNS} />}
-      {hasPassing && <SeasonStatTable title="Passing" rows={passingSeasons} columns={PASSING_COLUMNS} />}
-      {hasRushRec && <SeasonStatTable title="Rushing & Receiving" rows={rushRecSeasons} columns={RUSH_REC_COLUMNS} />}
-      {hasDefense && <SeasonStatTable title="Defense" rows={defenseSeasons} columns={DEFENSE_COLUMNS} />}
-      {hasKicking && <SeasonStatTable title="Kicking" rows={kickingSeasons} columns={KICKING_COLUMNS} />}
-      {hasPunting && <SeasonStatTable title="Punting" rows={puntingSeasons} columns={PUNTING_COLUMNS} />}
-      {hasReturns && <SeasonStatTable title="Returns" rows={returnsSeasons} columns={RETURNS_COLUMNS} />}
-
-      {/* College career */}
-      {collegeCareer.length > 0 && (
-        <>
-          <h2 className="mb-2 mt-4 text-sm font-semibold uppercase tracking-wide text-neutral-500">
-            College Career
-          </h2>
-          {hasCollegePassing && (
-            <SeasonStatTable title="Passing" rows={collegeCareer} columns={COLLEGE_PASSING_COLUMNS} />
-          )}
-          {hasCollegeRushRec && (
-            <SeasonStatTable title="Rushing & Receiving" rows={collegeCareer} columns={COLLEGE_RUSH_REC_COLUMNS} />
-          )}
-          {hasCollegeDefense && (
-            <SeasonStatTable title="Defense" rows={collegeCareer} columns={COLLEGE_DEFENSE_COLUMNS} />
-          )}
-          {hasCollegeKicking && (
-            <SeasonStatTable title="Kicking" rows={collegeCareer} columns={COLLEGE_KICKING_COLUMNS} />
-          )}
-        </>
-      )}
     </div>
   )
 }
