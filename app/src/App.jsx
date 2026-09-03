@@ -4,6 +4,7 @@ import TeamStatsTable from './TeamStatsTable'
 import TeamPage from './TeamPage'
 import DivisionNav from './DivisionNav'
 import Footer from './Footer'
+import PlayerPage from './PlayerPage'
 
 function App() {
   return (
@@ -16,6 +17,7 @@ function App() {
             <Routes>
               <Route path="/" element={<TeamStatsTable />} />
               <Route path="/team/:teamAbbr" element={<TeamPage />} />
+              <Route path="/player/:playerId" element={<PlayerPage />} />
             </Routes>
           </div>
         </div>
