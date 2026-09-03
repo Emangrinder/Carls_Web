@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { useParams, Link } from 'react-router-dom'
 import { supabase } from './supabaseClient'
 
 const SEASONS = [2026, 2025, 2024]
@@ -72,6 +72,27 @@ const POSITION_CATEGORY = {
   FS: 's', SS: 's', S: 's',
   PK: 'st', P: 'st', KR: 'st', PR: 'st', LS: 'st', H: 'st',
 }
+// Injury status colors, shared between the starter tiles (background) and
+// the bottom depth list (font color) -- keys match current_injury_report's
+// own report_status values verbatim.
+const INJURY_STATUS_STYLES = {
+  Out: {
+    chip: 'border-red-400 bg-red-50 dark:border-red-700 dark:bg-red-950/40',
+    text: 'text-red-600 dark:text-red-400',
+    swatch: 'border-red-400 bg-red-50 dark:border-red-700 dark:bg-red-950/40',
+  },
+  Doubtful: {
+    chip: 'border-orange-400 bg-orange-50 dark:border-orange-700 dark:bg-orange-950/40',
+    text: 'text-orange-600 dark:text-orange-400',
+    swatch: 'border-orange-400 bg-orange-50 dark:border-orange-700 dark:bg-orange-950/40',
+  },
+  Questionable: {
+    chip: 'border-yellow-400 bg-yellow-50 dark:border-yellow-700 dark:bg-yellow-950/40',
+    text: 'text-yellow-600 dark:text-yellow-500',
+    swatch: 'border-yellow-400 bg-yellow-50 dark:border-yellow-700 dark:bg-yellow-950/40',
+  },
+}
+
 const OL_ORDER = ['LT', 'LG', 'C', 'RG', 'RT']
 const KICKING_STARTER_ABBRS = ['PK', 'P']
 const RETURN_STARTER_ABBRS = ['KR', 'PR']
@@ -97,9 +118,14 @@ function lastNameOnly(fullName) {
   return rest || fullName
 }
 
-function PlayerChip({ p }) {
+function PlayerChip({ p, injuryStatus }) {
+  const style = INJURY_STATUS_STYLES[injuryStatus]
   return (
-    <div className="shrink-0 whitespace-nowrap rounded border border-neutral-200 px-2 py-1 text-center text-xs dark:border-neutral-800">
+    <div
+      className={`shrink-0 whitespace-nowrap rounded border px-2 py-1 text-center text-xs ${
+        style ? style.chip : 'border-neutral-200 dark:border-neutral-800'
+      }`}
+    >
       <div className="text-[10px] text-neutral-500">
         {p.position_abbr}
         {p.rank > 1 ? p.rank : ''}
@@ -107,6 +133,20 @@ function PlayerChip({ p }) {
       <div className="font-medium text-neutral-900 dark:text-neutral-100">
         {lastNameOnly(p.player_name)}
       </div>
+    </div>
+  )
+}
+
+function InjuryLegend() {
+  return (
+    <div className="mt-6 flex flex-wrap items-center gap-4 text-xs text-neutral-500">
+      <span className="font-medium text-neutral-400">Injury status:</span>
+      {Object.entries(INJURY_STATUS_STYLES).map(([status, style]) => (
+        <span key={status} className="flex items-center gap-1.5">
+          <span className={`inline-block h-3 w-3 rounded border ${style.swatch}`} />
+          {status}
+        </span>
+      ))}
     </div>
   )
 }
@@ -140,7 +180,7 @@ function GameCell({ teamAbbr, game, byeLabel }) {
         ? 'text-red-600 dark:text-red-400'
         : 'text-neutral-500'
   return (
-    <div className="flex flex-col items-center gap-1">
+    <Link to={`/matches/${game.game_id}`} className="flex flex-col items-center gap-1 hover:opacity-75">
       <img
         src={`${import.meta.env.BASE_URL}logos/${opponent}.png`}
         alt={opponent}
@@ -148,18 +188,22 @@ function GameCell({ teamAbbr, game, byeLabel }) {
       />
       <span className={`text-[10px] font-medium ${resultColor}`}>{result ?? '—'}</span>
       <span className="text-[9px] text-neutral-400">{isHome ? ' ' : '@'}</span>
-    </div>
+    </Link>
   )
 }
 
-function StarterRow({ label, players }) {
+function StarterRow({ label, players, injuryByPlayerId }) {
   if (players.length === 0) return null
   return (
     <div className="mb-3">
       <div className="mb-1 text-xs text-neutral-500">{label}</div>
-      <div className="flex flex-nowrap gap-2 overflow-x-auto">
+      <div className="flex flex-nowrap justify-center gap-2 overflow-x-auto">
         {players.map((p) => (
-          <PlayerChip key={`${p.position_name}-${p.position_slot}-${p.rank}`} p={p} />
+          <PlayerChip
+            key={`${p.position_name}-${p.position_slot}-${p.rank}`}
+            p={p}
+            injuryStatus={injuryByPlayerId.get(p.player_id)}
+          />
         ))}
       </div>
     </div>
@@ -172,6 +216,7 @@ export default function TeamPage() {
   const [team, setTeam] = useState(null)
   const [stats, setStats] = useState(null)
   const [depthChart, setDepthChart] = useState([])
+  const [injuries, setInjuries] = useState([])
   const [games, setGames] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -185,21 +230,23 @@ export default function TeamPage() {
       supabase.from('teams').select('*').eq('team_abbr', teamAbbr).single(),
       supabase.from('team_season_stats').select('*').eq('team', teamAbbr).eq('season', season).maybeSingle(),
       supabase.from('depth_chart_ranks').select('*').eq('team', teamAbbr).order('position_group').order('rank'),
+      supabase.from('current_injury_report').select('player_id, report_status').eq('team', teamAbbr),
       supabase
         .from('games')
         .select('*')
         .eq('season', season)
         .or(`home_team.eq.${teamAbbr},away_team.eq.${teamAbbr}`)
         .order('week'),
-    ]).then(([teamRes, statsRes, depthRes, gamesRes]) => {
+    ]).then(([teamRes, statsRes, depthRes, injuriesRes, gamesRes]) => {
       if (cancelled) return
-      const err = teamRes.error || statsRes.error || depthRes.error || gamesRes.error
+      const err = teamRes.error || statsRes.error || depthRes.error || injuriesRes.error || gamesRes.error
       if (err) {
         setError(err.message)
       } else {
         setTeam(teamRes.data)
         setStats(statsRes.data)
         setDepthChart(depthRes.data)
+        setInjuries(injuriesRes.data)
         setGames(gamesRes.data)
       }
       setLoading(false)
@@ -245,6 +292,7 @@ export default function TeamPage() {
     ...dlStarters, ...lbStarters, ...cbStarters, ...sStarters,
     ...kickingStarters, ...returnStarters,
   ])
+  const injuryByPlayerId = new Map(injuries.map((i) => [i.player_id, i.report_status]))
   const depthRest = depthChart.filter((p) => !shownInStarters.has(p))
   const depthByGroup = depthRest.reduce((acc, row) => {
     ;(acc[row.position_group] ??= []).push(row)
@@ -296,23 +344,23 @@ export default function TeamPage() {
 
           <div className="mb-4">
             <h3 className="mb-1 text-xs font-bold uppercase text-neutral-400">Starting Offense</h3>
-            <StarterRow label="QB" players={qbStarters} />
-            <StarterRow label="Offensive Line" players={olStarters} />
-            <StarterRow label="Skill" players={skillStarters} />
+            <StarterRow label="QB" players={qbStarters} injuryByPlayerId={injuryByPlayerId} />
+            <StarterRow label="Offensive Line" players={olStarters} injuryByPlayerId={injuryByPlayerId} />
+            <StarterRow label="Skill" players={skillStarters} injuryByPlayerId={injuryByPlayerId} />
           </div>
 
           <div className="mb-4">
             <h3 className="mb-1 text-xs font-bold uppercase text-neutral-400">Starting Defense</h3>
-            <StarterRow label="D-Line" players={dlStarters} />
-            <StarterRow label="Linebackers" players={lbStarters} />
-            <StarterRow label="Corners" players={cbStarters} />
-            <StarterRow label="Safeties" players={sStarters} />
+            <StarterRow label="D-Line" players={dlStarters} injuryByPlayerId={injuryByPlayerId} />
+            <StarterRow label="Linebackers" players={lbStarters} injuryByPlayerId={injuryByPlayerId} />
+            <StarterRow label="Corners" players={cbStarters} injuryByPlayerId={injuryByPlayerId} />
+            <StarterRow label="Safeties" players={sStarters} injuryByPlayerId={injuryByPlayerId} />
           </div>
 
           <div className="mb-2">
             <h3 className="mb-1 text-xs font-bold uppercase text-neutral-400">Special Teams</h3>
-            <StarterRow label="Kicking" players={kickingStarters} />
-            <StarterRow label="Return" players={returnStarters} />
+            <StarterRow label="Kicking" players={kickingStarters} injuryByPlayerId={injuryByPlayerId} />
+            <StarterRow label="Return" players={returnStarters} injuryByPlayerId={injuryByPlayerId} />
           </div>
         </div>
 
@@ -406,23 +454,28 @@ export default function TeamPage() {
           <div key={group}>
             <h4 className="mb-1 text-xs font-semibold text-neutral-500">{group}</h4>
             <ul className="text-sm">
-              {players.map((p) => (
-                <li
-                  key={`${p.position_name}-${p.position_slot}-${p.rank}`}
-                  className="flex justify-between border-b border-neutral-100 py-1 dark:border-neutral-900"
-                >
-                  <span className="text-neutral-500">
-                    {p.position_abbr} #{p.rank}
-                  </span>
-                  <span className="text-neutral-900 dark:text-neutral-100">
-                    {p.player_name ?? '—'}
-                  </span>
-                </li>
-              ))}
+              {players.map((p) => {
+                const injuryStyle = INJURY_STATUS_STYLES[injuryByPlayerId.get(p.player_id)]
+                return (
+                  <li
+                    key={`${p.position_name}-${p.position_slot}-${p.rank}`}
+                    className="flex justify-between border-b border-neutral-100 py-1 dark:border-neutral-900"
+                  >
+                    <span className="text-neutral-500">
+                      {p.position_abbr} #{p.rank}
+                    </span>
+                    <span className={injuryStyle ? injuryStyle.text : 'text-neutral-900 dark:text-neutral-100'}>
+                      {p.player_name ?? '—'}
+                    </span>
+                  </li>
+                )
+              })}
             </ul>
           </div>
         ))}
       </div>
+
+      <InjuryLegend />
     </div>
   )
 }
