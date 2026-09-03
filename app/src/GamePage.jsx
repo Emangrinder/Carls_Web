@@ -27,6 +27,14 @@ function fmtPct(n) {
   return n == null ? '—' : `${n}%`
 }
 
+// Drops just the first token (first name), keeping the rest -- handles
+// suffixes like "Jr."/"III" better than taking only the last token would.
+function lastNameOnly(fullName) {
+  if (!fullName) return '—'
+  const rest = fullName.split(' ').slice(1).join(' ')
+  return rest || fullName
+}
+
 function fmtKickoff(gameday, weekday, gametime) {
   if (!gameday) return weekday || 'Date TBD'
   const dateStr = new Date(`${gameday}T00:00:00`).toLocaleDateString(undefined, {
@@ -91,6 +99,62 @@ function buildStatRow(rows) {
     defense_snaps_avg: sum('defense_snaps') / n,
   }
 }
+
+// Box-score column sets. Each column renders straight off the row rather
+// than a plain key lookup so combined fields (e.g. fumble recoveries, which
+// come from separate _own/_opp columns) work the same way simple ones do.
+const c = (label, key) => ({ label, render: (r) => fmtCount(r[key]) })
+const PASSING_COLUMNS = [
+  c('C', 'completions'),
+  c('ATT', 'attempts'),
+  c('YDS', 'passing_yards'),
+  c('TD', 'passing_tds'),
+  c('INT', 'passing_interceptions'),
+]
+const RUSHING_COLUMNS = [c('CAR', 'carries'), c('YDS', 'rushing_yards'), c('TD', 'rushing_tds')]
+const RECEIVING_COLUMNS = [
+  c('REC', 'receptions'),
+  c('TGT', 'targets'),
+  c('YDS', 'receiving_yards'),
+  c('TD', 'receiving_tds'),
+]
+const DEFENSE_COLUMNS = [
+  c('SOLO', 'def_tackles_solo'),
+  c('AST', 'def_tackles_with_assist'),
+  c('TFL', 'def_tackles_for_loss'),
+  c('SACK', 'def_sacks'),
+  c('QB HITS', 'def_qb_hits'),
+  c('PD', 'def_pass_defended'),
+]
+const INTERCEPTIONS_COLUMNS = [c('INT', 'def_interceptions'), c('YDS', 'def_interception_yards')]
+const FORCED_FUMBLES_COLUMNS = [c('FF', 'def_fumbles_forced')]
+const FUMBLE_RECOVERIES_COLUMNS = [
+  { label: 'FR', render: (r) => fmtCount((r.fumble_recovery_own ?? 0) + (r.fumble_recovery_opp ?? 0)) },
+  {
+    label: 'YDS',
+    render: (r) => fmtCount((r.fumble_recovery_yards_own ?? 0) + (r.fumble_recovery_yards_opp ?? 0)),
+  },
+  c('TD', 'fumble_recovery_tds'),
+]
+const KICKING_COLUMNS = [
+  { label: 'FG', render: (r) => `${fmtCount(r.fg_made)}/${fmtCount(r.fg_att)}` },
+  c('LNG', 'fg_long'),
+  { label: 'PAT', render: (r) => `${fmtCount(r.pat_made)}/${fmtCount(r.pat_att)}` },
+]
+const PUNTING_COLUMNS = [
+  c('PUNTS', 'pt_att'),
+  c('YDS', 'pt_yards'),
+  { label: 'AVG', render: (r) => (r.pt_att ? fmtAvg(r.pt_yards / r.pt_att) : '—') },
+  c('LNG', 'pt_long'),
+  c('IN20', 'pt_inside_20'),
+]
+const RETURN_COLUMNS = [
+  c('KR', 'kickoff_returns'),
+  c('KR YDS', 'kickoff_return_yards'),
+  c('PR', 'punt_returns'),
+  c('PR YDS', 'punt_return_yards'),
+  c('TD', 'special_teams_tds'),
+]
 
 function recordFor(games, team) {
   let wins = 0
@@ -192,39 +256,60 @@ function MatchupStatsTable({ windows, awayAbbr, homeAbbr }) {
   )
 }
 
-function BoxScoreSection({ title, columns, rows }) {
-  if (rows.length === 0) return null
+// One team's half of a box-score category -- player name links to their
+// player-card page, position comes from the joined players row.
+function BoxScoreTeamTable({ abbr, rows, columns }) {
+  return (
+    <div>
+      <h4 className="mb-1 text-xs font-semibold text-neutral-500">{abbr}</h4>
+      {rows.length === 0 ? (
+        <p className="text-sm text-neutral-400">No stats.</p>
+      ) : (
+        <table className="w-full border-collapse text-sm">
+          <thead>
+            <tr className="border-b border-neutral-200 text-left text-neutral-500 dark:border-neutral-800">
+              <th className="py-1.5 font-medium">Player</th>
+              <th className="py-1.5 pl-2 font-medium">Pos</th>
+              {columns.map((c) => (
+                <th key={c.label} className="py-1.5 pl-2 text-right font-medium">
+                  {c.label}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.player_id} className="border-b border-neutral-100 dark:border-neutral-900">
+                <td className="py-1.5">
+                  <Link to={`/player/${r.player_id}`} className="text-neutral-900 hover:underline dark:text-neutral-100">
+                    {lastNameOnly(r.players?.display_name)}
+                  </Link>
+                </td>
+                <td className="py-1.5 pl-2 text-neutral-400">{r.players?.position ?? '—'}</td>
+                {columns.map((c) => (
+                  <td key={c.label} className="py-1.5 pl-2 text-right tabular-nums">
+                    {c.render(r)}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  )
+}
+
+// A box-score category is two team tables side by side (away, then home).
+function BoxScoreSection({ title, columns, awayRows, homeRows, awayAbbr, homeAbbr }) {
+  if (awayRows.length === 0 && homeRows.length === 0) return null
   return (
     <div className="mb-6">
       <h3 className="mb-2 text-xs font-bold uppercase text-neutral-400">{title}</h3>
-      <table className="w-full border-collapse text-sm">
-        <thead>
-          <tr className="border-b border-neutral-200 text-left text-neutral-500 dark:border-neutral-800">
-            <th className="py-1.5 font-medium">Player</th>
-            <th className="py-1.5 pl-2 font-medium">Team</th>
-            {columns.map((c) => (
-              <th key={c.key} className="py-1.5 pl-2 text-right font-medium">
-                {c.label}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r) => (
-            <tr key={r.player_id} className="border-b border-neutral-100 dark:border-neutral-900">
-              <td className="py-1.5 text-neutral-900 dark:text-neutral-100">
-                {r.players?.display_name ?? '—'}
-              </td>
-              <td className="py-1.5 pl-2 text-neutral-500">{r.team}</td>
-              {columns.map((c) => (
-                <td key={c.key} className="py-1.5 pl-2 text-right tabular-nums">
-                  {fmtCount(r[c.key])}
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <div className="grid gap-4 overflow-x-auto sm:grid-cols-2">
+        <BoxScoreTeamTable abbr={awayAbbr} rows={awayRows} columns={columns} />
+        <BoxScoreTeamTable abbr={homeAbbr} rows={homeRows} columns={columns} />
+      </div>
     </div>
   )
 }
@@ -266,10 +351,9 @@ export default function GamePage() {
   const [seasonRows, setSeasonRows] = useState([])
   const [recordGames, setRecordGames] = useState([])
   const [injuries, setInjuries] = useState([])
-  const [passing, setPassing] = useState([])
-  const [rushing, setRushing] = useState([])
-  const [receiving, setReceiving] = useState([])
+  const [offense, setOffense] = useState([])
   const [defense, setDefense] = useState([])
+  const [specialTeams, setSpecialTeams] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
@@ -323,32 +407,22 @@ export default function GamePage() {
             .in('team', teamAbbrs),
           supabase
             .from('player_offense_stats')
-            .select('*, players(display_name)')
-            .eq('game_id', gameId)
-            .gt('attempts', 0)
-            .order('passing_yards', { ascending: false }),
-          supabase
-            .from('player_offense_stats')
-            .select('*, players(display_name)')
-            .eq('game_id', gameId)
-            .gt('carries', 0)
-            .order('rushing_yards', { ascending: false }),
-          supabase
-            .from('player_offense_stats')
-            .select('*, players(display_name)')
-            .eq('game_id', gameId)
-            .gt('targets', 0)
-            .order('receiving_yards', { ascending: false }),
+            .select('*, players(display_name, position)')
+            .eq('game_id', gameId),
           supabase
             .from('player_defense_stats')
-            .select('*, players(display_name)')
+            .select('*, players(display_name, position)')
             .eq('game_id', gameId)
             .order('def_tackles_solo', { ascending: false }),
-        ]).then(([teamsRes, tgs, seasonGameRows, recGames, inj, pass, rush, rec, def]) => {
+          supabase
+            .from('player_special_teams_stats')
+            .select('*, players(display_name, position)')
+            .eq('game_id', gameId),
+        ]).then(([teamsRes, tgs, seasonGameRows, recGames, inj, off, def, st]) => {
           if (cancelled) return
           const err =
             teamsRes.error || tgs.error || seasonGameRows.error || recGames.error || inj.error ||
-            pass.error || rush.error || rec.error || def.error
+            off.error || def.error || st.error
           if (err) {
             setError(err.message)
           } else {
@@ -357,10 +431,9 @@ export default function GamePage() {
             setSeasonRows(seasonGameRows.data)
             setRecordGames(recGames.data)
             setInjuries(inj.data)
-            setPassing(pass.data)
-            setRushing(rush.data)
-            setReceiving(rec.data)
+            setOffense(off.data)
             setDefense(def.data)
+            setSpecialTeams(st.data)
           }
           setLoading(false)
         })
@@ -405,6 +478,42 @@ export default function GamePage() {
 
   const homeInjuries = injuries.filter((r) => r.team === game.home_team)
   const awayInjuries = injuries.filter((r) => r.team === game.away_team)
+
+  // Box score: split each category into an away/home pair, sorted and
+  // filtered to players who actually recorded that category's stat.
+  const byTeam = (rows, filter) => {
+    const filtered = filter ? rows.filter(filter) : rows
+    return {
+      away: filtered.filter((r) => r.team === game.away_team),
+      home: filtered.filter((r) => r.team === game.home_team),
+    }
+  }
+  const passing = byTeam(
+    [...offense].sort((a, b) => (b.passing_yards ?? 0) - (a.passing_yards ?? 0)),
+    (r) => (r.attempts ?? 0) > 0,
+  )
+  const rushing = byTeam(
+    [...offense].sort((a, b) => (b.rushing_yards ?? 0) - (a.rushing_yards ?? 0)),
+    (r) => (r.carries ?? 0) > 0,
+  )
+  const receiving = byTeam(
+    [...offense].sort((a, b) => (b.receiving_yards ?? 0) - (a.receiving_yards ?? 0)),
+    (r) => (r.targets ?? 0) > 0,
+  )
+  const tackling = byTeam(
+    defense,
+    (r) => (r.def_tackles_solo ?? 0) > 0 || (r.def_tackles_with_assist ?? 0) > 0 ||
+      (r.def_sacks ?? 0) > 0 || (r.def_tackles_for_loss ?? 0) > 0 || (r.def_qb_hits ?? 0) > 0,
+  )
+  const interceptions = byTeam(defense, (r) => (r.def_interceptions ?? 0) > 0)
+  const forcedFumbles = byTeam(defense, (r) => (r.def_fumbles_forced ?? 0) > 0)
+  const fumbleRecoveries = byTeam(
+    defense,
+    (r) => (r.fumble_recovery_own ?? 0) + (r.fumble_recovery_opp ?? 0) > 0,
+  )
+  const kicking = byTeam(specialTeams, (r) => (r.fg_att ?? 0) > 0 || (r.pat_att ?? 0) > 0)
+  const punting = byTeam(specialTeams, (r) => (r.pt_att ?? 0) > 0)
+  const returns = byTeam(specialTeams, (r) => (r.kickoff_returns ?? 0) > 0 || (r.punt_returns ?? 0) > 0)
 
   return (
     <div className="mx-auto w-full max-w-4xl px-4 py-6">
@@ -510,47 +619,16 @@ export default function GamePage() {
       ) : (
         <>
           <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-neutral-500">Box Score</h2>
-          <BoxScoreSection
-            title="Passing"
-            rows={passing}
-            columns={[
-              { key: 'completions', label: 'C' },
-              { key: 'attempts', label: 'ATT' },
-              { key: 'passing_yards', label: 'YDS' },
-              { key: 'passing_tds', label: 'TD' },
-              { key: 'passing_interceptions', label: 'INT' },
-            ]}
-          />
-          <BoxScoreSection
-            title="Rushing"
-            rows={rushing}
-            columns={[
-              { key: 'carries', label: 'CAR' },
-              { key: 'rushing_yards', label: 'YDS' },
-              { key: 'rushing_tds', label: 'TD' },
-            ]}
-          />
-          <BoxScoreSection
-            title="Receiving"
-            rows={receiving}
-            columns={[
-              { key: 'receptions', label: 'REC' },
-              { key: 'targets', label: 'TGT' },
-              { key: 'receiving_yards', label: 'YDS' },
-              { key: 'receiving_tds', label: 'TD' },
-            ]}
-          />
-          <BoxScoreSection
-            title="Defense"
-            rows={defense}
-            columns={[
-              { key: 'def_tackles_solo', label: 'SOLO' },
-              { key: 'def_tackles_with_assist', label: 'AST' },
-              { key: 'def_sacks', label: 'SACK' },
-              { key: 'def_interceptions', label: 'INT' },
-              { key: 'def_pass_defended', label: 'PD' },
-            ]}
-          />
+          <BoxScoreSection title="Passing" columns={PASSING_COLUMNS} awayRows={passing.away} homeRows={passing.home} awayAbbr={game.away_team} homeAbbr={game.home_team} />
+          <BoxScoreSection title="Rushing" columns={RUSHING_COLUMNS} awayRows={rushing.away} homeRows={rushing.home} awayAbbr={game.away_team} homeAbbr={game.home_team} />
+          <BoxScoreSection title="Receiving" columns={RECEIVING_COLUMNS} awayRows={receiving.away} homeRows={receiving.home} awayAbbr={game.away_team} homeAbbr={game.home_team} />
+          <BoxScoreSection title="Defense" columns={DEFENSE_COLUMNS} awayRows={tackling.away} homeRows={tackling.home} awayAbbr={game.away_team} homeAbbr={game.home_team} />
+          <BoxScoreSection title="Interceptions" columns={INTERCEPTIONS_COLUMNS} awayRows={interceptions.away} homeRows={interceptions.home} awayAbbr={game.away_team} homeAbbr={game.home_team} />
+          <BoxScoreSection title="Forced Fumbles" columns={FORCED_FUMBLES_COLUMNS} awayRows={forcedFumbles.away} homeRows={forcedFumbles.home} awayAbbr={game.away_team} homeAbbr={game.home_team} />
+          <BoxScoreSection title="Fumble Recoveries" columns={FUMBLE_RECOVERIES_COLUMNS} awayRows={fumbleRecoveries.away} homeRows={fumbleRecoveries.home} awayAbbr={game.away_team} homeAbbr={game.home_team} />
+          <BoxScoreSection title="Kicking" columns={KICKING_COLUMNS} awayRows={kicking.away} homeRows={kicking.home} awayAbbr={game.away_team} homeAbbr={game.home_team} />
+          <BoxScoreSection title="Punting" columns={PUNTING_COLUMNS} awayRows={punting.away} homeRows={punting.home} awayAbbr={game.away_team} homeAbbr={game.home_team} />
+          <BoxScoreSection title="Return" columns={RETURN_COLUMNS} awayRows={returns.away} homeRows={returns.home} awayAbbr={game.away_team} homeAbbr={game.home_team} />
         </>
       )}
     </div>
