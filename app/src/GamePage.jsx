@@ -175,10 +175,15 @@ function pageGradientStyle(awayAbbr, homeAbbr) {
   const away = TEAM_COLORS[awayAbbr]
   const home = TEAM_COLORS[homeAbbr]
   if (!away || !home) return {}
-  const alpha = 0.18
+  const alpha = 0.07
   return {
+    // The gray band sits fully opaque across the center so it reads as one
+    // neutral tone regardless of which two team colors are underneath --
+    // at low alpha the team washes are faint enough that this matters less,
+    // but a plateau (not a single midpoint) keeps the two sides matching
+    // exactly rather than each fading to gray at a very slightly different rate.
     backgroundImage: [
-      'linear-gradient(to right, transparent 0%, transparent 12%, rgba(115,115,115,0.35) 50%, transparent 88%, transparent 100%)',
+      'linear-gradient(to right, transparent 0%, transparent 20%, rgba(115,115,115,0.4) 42%, rgba(115,115,115,0.4) 58%, transparent 80%, transparent 100%)',
       `linear-gradient(to bottom, ${hexToRgba(away.primary, alpha)}, ${hexToRgba(away.secondary, alpha)})`,
       `linear-gradient(to bottom, ${hexToRgba(home.primary, alpha)}, ${hexToRgba(home.secondary, alpha)})`,
     ].join(', '),
