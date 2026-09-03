@@ -544,6 +544,12 @@ function collapseInjuryEvents(rows) {
 
 export default function PlayerPage() {
   const { playerId } = useParams()
+  // Rookies not yet crosswalked into `players` (no gsis_id assigned by
+  // nflverse yet) are linked by name instead -- see TeamPage's depth-chart
+  // links. There's no NFL identity to query in that case, only whatever
+  // college data can be found by matching the name.
+  const isCollegeOnly = playerId.startsWith('name:')
+  const lookupName = isCollegeOnly ? decodeURIComponent(playerId.slice('name:'.length)) : null
   const [player, setPlayer] = useState(null)
   const [depthChart, setDepthChart] = useState([])
   const [injury, setInjury] = useState(null)
@@ -564,6 +570,57 @@ export default function PlayerPage() {
     let cancelled = false
     setLoading(true)
     setError(null)
+
+    if (isCollegeOnly) {
+      Promise.all([
+        supabase.from('depth_chart_ranks').select('*').ilike('player_name', lookupName).order('rank'),
+        supabase
+          .from('college_rosters')
+          .select('*')
+          .ilike('full_name', lookupName)
+          .order('season', { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+        supabase.from('college_player_season_stats').select('*').ilike('player_name', lookupName).order('season'),
+        supabase.from('teams').select('team_abbr, team_name').in('team_abbr', CURRENT_TEAMS),
+      ]).then(([depthRes, collegeRosterRes, collegeSeasonsRes, teamsRes]) => {
+        if (cancelled) return
+        const err = depthRes.error || collegeRosterRes.error || collegeSeasonsRes.error || teamsRes.error
+        if (err) {
+          setError(err.message)
+          setLoading(false)
+          return
+        }
+        const roster = collegeRosterRes.data
+        setPlayer({
+          display_name: lookupName,
+          position: roster?.position ?? null,
+          height: roster?.height ?? null,
+          weight: roster?.weight ?? null,
+          college_name: roster?.team ?? null,
+          birth_date: null,
+          rookie_season: null,
+          jersey_number: roster?.jersey ? Number(roster.jersey) : null,
+          headshot_url: null,
+        })
+        setDepthChart(depthRes.data)
+        setInjury(null)
+        setOffenseRows([])
+        setDefenseRows([])
+        setSpecialTeamsRows([])
+        setSnapCountsRaw([])
+        setCollegeSeasons(collegeSeasonsRes.data)
+        setCollegeRoster(roster)
+        setTeamGameStatsRows([])
+        setInjuryHistory([])
+        setTrades([])
+        setTeams(teamsRes.data)
+        setLoading(false)
+      })
+      return () => {
+        cancelled = true
+      }
+    }
 
     Promise.all([
       supabase.from('players').select('*').eq('player_id', playerId).maybeSingle(),
@@ -810,6 +867,12 @@ export default function PlayerPage() {
   return (
     <div className="min-h-full w-full" style={pageStyle}>
       <div className="mx-auto w-full max-w-4xl px-4 py-6">
+        {isCollegeOnly && (
+          <div className="mb-4 rounded border border-yellow-400 bg-yellow-50 px-3 py-2 text-xs text-yellow-800 dark:border-yellow-700 dark:bg-yellow-950/40 dark:text-yellow-300">
+            This player hasn't been linked to an NFL player profile yet (nflverse typically assigns this a few
+            weeks into a rookie's first season) — showing college stats only.
+          </div>
+        )}
         {/* Header: photo, name, position/team, bio */}
         <div className="mb-8 flex flex-col gap-6 sm:flex-row sm:items-start">
           {photoUrl ? (

@@ -305,6 +305,11 @@ function PlayerChip({ p, injuryStatus, popupData, findNextUp, onHoverInjured, on
     >
       {p.player_id ? (
         <Link to={`/player/${p.player_id}`} className={className}>{inner}</Link>
+      ) : p.player_name ? (
+        // Rookies without a gsis_id yet (nflverse hasn't crosswalked them into
+        // `players`) still have college stats -- link by name so PlayerPage
+        // can fall back to a college-only profile instead of no page at all.
+        <Link to={`/player/name:${encodeURIComponent(p.player_name)}`} className={className}>{inner}</Link>
       ) : (
         <div className={className}>{inner}</div>
       )}
@@ -342,9 +347,9 @@ function DepthListItem({ p, injuryStatus, isNextUp, popupData, findNextUp, onHov
       <span className="text-neutral-500">
         {p.position_abbr} #{p.rank}
       </span>
-      {p.player_id ? (
+      {p.player_id || p.player_name ? (
         <Link
-          to={`/player/${p.player_id}`}
+          to={p.player_id ? `/player/${p.player_id}` : `/player/name:${encodeURIComponent(p.player_name)}`}
           className={`hover:underline ${injuryStyle ? injuryStyle.text : 'text-neutral-900 dark:text-neutral-100'}`}
         >
           {p.player_name ?? '—'}
