@@ -61,7 +61,7 @@ TABLE_SPECS = [
 
     ("players", ["player_id", "display_name", "first_name", "last_name", "position",
                  "position_group", "height", "weight", "college_name", "birth_date",
-                 "rookie_season", "jersey_number", "pfr_id"],
+                 "rookie_season", "jersey_number", "pfr_id", "espn_id", "headshot_url"],
      season_sources("players"), "player_id"),
 
     ("games", ["game_id", "season", "week", "game_type", "gameday", "weekday", "gametime",

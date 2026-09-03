@@ -264,13 +264,15 @@ def main():
         cur.execute(
             """INSERT OR IGNORE INTO players (
                 player_id, display_name, first_name, last_name, position, position_group,
-                height, weight, college_name, birth_date, rookie_season, jersey_number, pfr_id
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                height, weight, college_name, birth_date, rookie_season, jersey_number, pfr_id,
+                espn_id, headshot_url
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 pid, row["display_name"], row["first_name"], row["last_name"],
                 row["position"], row["position_group"], to_int(row["height"]), to_int(row["weight"]),
                 row["college_name"], row["birth_date"], to_int(row["rookie_season"]),
                 to_int(row["jersey_number"]), row["pfr_id"],
+                to_text(row["espn_id"]), to_text(row["headshot"]),
             ),
         )
         players_inserted.add(pid)

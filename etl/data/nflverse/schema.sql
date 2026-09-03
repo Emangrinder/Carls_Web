@@ -29,7 +29,9 @@ CREATE TABLE players (
     birth_date      TEXT,
     rookie_season   INTEGER,
     jersey_number   INTEGER,
-    pfr_id          TEXT                       -- crosswalk key for snap_counts (PFR ids)
+    pfr_id          TEXT,                      -- crosswalk key for snap_counts (PFR ids)
+    espn_id         TEXT,
+    headshot_url    TEXT                       -- nflverse's own pro headshot CDN URL
 );
 
 CREATE TABLE games (
