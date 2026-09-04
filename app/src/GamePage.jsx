@@ -178,13 +178,15 @@ function pageGradientStyle(awayAbbr, homeAbbr) {
   if (!away || !home) return {}
   const alpha = 0.07
   return {
-    // The gray band sits fully opaque across the center so it reads as one
-    // neutral tone regardless of which two team colors are underneath --
-    // at low alpha the team washes are faint enough that this matters less,
-    // but a plateau (not a single midpoint) keeps the two sides matching
-    // exactly rather than each fading to gray at a very slightly different rate.
+    // The away/home team washes are each their own 50%-wide layer, so they
+    // butt up against each other at a hard edge right at the center -- at
+    // 0.4 alpha the gray band was translucent enough that each side's own
+    // (different) team color still showed through it, leaving a visible
+    // seam exactly where the two layers meet. Near-opaque (0.92) fully
+    // covers that edge across a wide enough band that both sides render as
+    // the identical gray, not just a similar one.
     backgroundImage: [
-      'linear-gradient(to right, transparent 0%, transparent 20%, rgba(115,115,115,0.4) 42%, rgba(115,115,115,0.4) 58%, transparent 80%, transparent 100%)',
+      'linear-gradient(to right, transparent 0%, transparent 20%, rgba(115,115,115,0.92) 42%, rgba(115,115,115,0.92) 58%, transparent 80%, transparent 100%)',
       `linear-gradient(to bottom, ${hexToRgba(away.primary, alpha)}, ${hexToRgba(away.secondary, alpha)})`,
       `linear-gradient(to bottom, ${hexToRgba(home.primary, alpha)}, ${hexToRgba(home.secondary, alpha)})`,
     ].join(', '),
@@ -371,7 +373,7 @@ function BoxScoreSection({ title, columns, awayRows, homeRows, awayAbbr, homeAbb
   )
 }
 
-function InjuryList({ abbr, rows }) {
+function InjuryList({ abbr, rows, depthRankByPlayerId, snapsByPlayerId }) {
   return (
     <div>
       <h3 className="mb-1 text-xs font-bold uppercase text-neutral-400">{abbr}</h3>
@@ -379,27 +381,35 @@ function InjuryList({ abbr, rows }) {
         <p className="text-sm text-neutral-400">No injury designations reported.</p>
       ) : (
         <ul className="text-sm">
-          {rows.map((r) => (
-            <li
-              key={r.player_id}
-              className="flex justify-between gap-2 border-b border-neutral-100 py-1 dark:border-neutral-900"
-            >
-              <span className="text-neutral-700 dark:text-neutral-300">
-                {r.player_id ? (
-                  <Link to={`/player/${r.player_id}`} className="hover:underline">
-                    {r.full_name}
-                  </Link>
-                ) : (
-                  r.full_name
-                )}
-                <span className="ml-1 text-xs text-neutral-400">{r.position}</span>
-              </span>
-              <span className={`shrink-0 text-xs font-medium ${INJURY_STATUS_STYLES[r.report_status] ?? 'text-neutral-400'}`}>
-                {r.report_status ?? '—'}
-                {r.report_primary_injury ? ` (${r.report_primary_injury})` : ''}
-              </span>
-            </li>
-          ))}
+          {rows.map((r) => {
+            const depthRank = depthRankByPlayerId.get(r.player_id)
+            const snaps = snapsByPlayerId.get(r.player_id)
+            return (
+              <li key={r.player_id} className="border-b border-neutral-100 py-1.5 dark:border-neutral-900">
+                <div className="flex justify-between gap-2">
+                  <span className="text-neutral-700 dark:text-neutral-300">
+                    {r.player_id ? (
+                      <Link to={`/player/${r.player_id}`} className="hover:underline">
+                        {r.full_name}
+                      </Link>
+                    ) : (
+                      r.full_name
+                    )}
+                    <span className="ml-1 text-xs text-neutral-400">{r.position}</span>
+                  </span>
+                  <span className={`shrink-0 text-xs font-medium ${INJURY_STATUS_STYLES[r.report_status] ?? 'text-neutral-400'}`}>
+                    {r.report_status ?? '—'}
+                    {r.report_primary_injury ? ` (${r.report_primary_injury})` : ''}
+                  </span>
+                </div>
+                <div className="text-[11px] text-neutral-400">
+                  {depthRank ?? 'Not on depth chart'}
+                  {' · '}
+                  {snaps ? `${snaps.total} snaps (${snaps.games} gm) this season` : 'No snaps yet this season'}
+                </div>
+              </li>
+            )
+          })}
         </ul>
       )}
     </div>
@@ -414,6 +424,8 @@ export default function GamePage() {
   const [seasonRows, setSeasonRows] = useState([])
   const [recordGames, setRecordGames] = useState([])
   const [injuries, setInjuries] = useState([])
+  const [injuryDepthRanks, setInjuryDepthRanks] = useState([])
+  const [injurySnapCounts, setInjurySnapCounts] = useState([])
   const [offense, setOffense] = useState([])
   const [defense, setDefense] = useState([])
   const [specialTeams, setSpecialTeams] = useState([])
@@ -456,7 +468,7 @@ export default function GamePage() {
           // compute each team's record as of kickoff (not the final record).
           supabase
             .from('games')
-            .select('season, week, game_type, home_team, away_team, home_score, away_score')
+            .select('game_id, season, week, game_type, home_team, away_team, home_score, away_score')
             .eq('season', gameData.season)
             .eq('game_type', 'REG')
             .or(teamAbbrs.map((t) => `home_team.eq.${t},away_team.eq.${t}`).join(','))
@@ -499,6 +511,23 @@ export default function GamePage() {
             setSpecialTeams(st.data)
           }
           setLoading(false)
+
+          // Depth chart rank and season-to-date snaps for whoever's on the
+          // injury report -- a second round-trip since both depend on the
+          // player_id list the injuries query above just resolved.
+          const injuryPlayerIds = [...new Set(inj.data.map((r) => r.player_id))]
+          if (injuryPlayerIds.length === 0) return
+          Promise.all([
+            supabase.from('depth_chart_ranks').select('player_id, position_abbr, rank').in('player_id', injuryPlayerIds),
+            supabase
+              .from('player_snap_counts')
+              .select('player_id, game_id, offense_snaps, defense_snaps, st_snaps')
+              .in('player_id', injuryPlayerIds),
+          ]).then(([dcRes, snapRes]) => {
+            if (cancelled) return
+            if (!dcRes.error) setInjuryDepthRanks(dcRes.data)
+            if (!snapRes.error) setInjurySnapCounts(snapRes.data)
+          })
         })
       })
 
@@ -541,6 +570,22 @@ export default function GamePage() {
 
   const homeInjuries = injuries.filter((r) => r.team === game.home_team)
   const awayInjuries = injuries.filter((r) => r.team === game.away_team)
+
+  // Depth chart rank (current snapshot -- see depth_chart_ranks' own
+  // comment, there's no historical version) and season-to-date snap
+  // totals as of kickoff, keyed by player_id for the injury report below.
+  const depthRankByPlayerId = new Map(
+    injuryDepthRanks.map((r) => [r.player_id, `${r.position_abbr}${r.rank > 1 ? r.rank : ''}`]),
+  )
+  const pregameGameIds = new Set(pregameGames.map((g) => g.game_id))
+  const snapsByPlayerId = new Map()
+  for (const row of injurySnapCounts) {
+    if (!pregameGameIds.has(row.game_id)) continue
+    const cur = snapsByPlayerId.get(row.player_id) ?? { total: 0, games: 0 }
+    cur.total += (row.offense_snaps ?? 0) + (row.defense_snaps ?? 0) + (row.st_snaps ?? 0)
+    cur.games += 1
+    snapsByPlayerId.set(row.player_id, cur)
+  }
 
   // Box score: split each category into an away/home pair, sorted and
   // filtered to players who actually recorded that category's stat.
@@ -678,8 +723,18 @@ export default function GamePage() {
           As reported for {game.season} {weekLabel(game)}.
         </p>
         <div className="grid gap-6 sm:grid-cols-2">
-          <InjuryList abbr={game.away_team} rows={awayInjuries} />
-          <InjuryList abbr={game.home_team} rows={homeInjuries} />
+          <InjuryList
+            abbr={game.away_team}
+            rows={awayInjuries}
+            depthRankByPlayerId={depthRankByPlayerId}
+            snapsByPlayerId={snapsByPlayerId}
+          />
+          <InjuryList
+            abbr={game.home_team}
+            rows={homeInjuries}
+            depthRankByPlayerId={depthRankByPlayerId}
+            snapsByPlayerId={snapsByPlayerId}
+          />
         </div>
       </div>
 
