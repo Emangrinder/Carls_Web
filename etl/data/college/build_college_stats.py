@@ -146,6 +146,23 @@ def aggregate_year(df: pd.DataFrame, year: int) -> pd.DataFrame:
     for athlete_id, d in per_athlete.items():
         d["pass_att"] = d.get("pass_att", 0) + d.get("pass_comp", 0)
 
+    # targets: target_player_id is NOT a reliable "who was thrown to on every
+    # attempt" column in this source -- checked real rows to confirm it's
+    # never populated on a completion (reception_player_id covers that case
+    # instead) and is only populated on a minority of incompletions (~20% in
+    # a sample season), leaving most incomplete-pass targets unidentified.
+    # Summing target_player_id alone (as the COUNT_ROLES loop above does)
+    # therefore undercounts targets so badly it can land BELOW receptions,
+    # which is a receiver stat-line that can't exist. Same fix shape as
+    # pass_att above: targets = whatever target_player_id captured (sparse
+    # incompletion targets) + receptions (every completion is definitionally
+    # a target), guaranteeing targets >= receptions. Still an undercount
+    # against true targets, since most untargeted incompletions have no
+    # identifiable receiver in this source at all -- there's no fixing that
+    # without better upstream charting.
+    for athlete_id, d in per_athlete.items():
+        d["targets"] = d.get("targets", 0) + d.get("receptions", 0)
+
     # pass_int (thrown, an offensive negative) uses a different role name
     # than def_int (a defensive takeaway) — same underlying play, two sides.
     if "interception_thrown_player_id" in df.columns:

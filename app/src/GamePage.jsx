@@ -2,6 +2,7 @@ import { Fragment, useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { supabase } from './supabaseClient'
 import LoadingSpinner from './LoadingSpinner'
+import { TEAM_COLORS, hexToRgba, contrastTextColor } from './teamColors'
 
 const POSTSEASON_LABELS = { WC: 'Wild Card', DIV: 'Divisional', CON: 'Conference Championship', SB: 'Super Bowl' }
 
@@ -22,6 +23,12 @@ function fmtAvg(n) {
 
 function fmtCount(n) {
   return n ?? 0
+}
+
+// Box-score cells specifically: a bare 0 just adds visual noise across a
+// wide stat grid, so blank it out like a missing value would be.
+function fmtStat(n) {
+  return n == null || n === 0 ? '—' : n
 }
 
 function fmtPct(n) {
@@ -104,7 +111,7 @@ function buildStatRow(rows) {
 // Box-score column sets. Each column renders straight off the row rather
 // than a plain key lookup so combined fields (e.g. fumble recoveries, which
 // come from separate _own/_opp columns) work the same way simple ones do.
-const c = (label, key) => ({ label, render: (r) => fmtCount(r[key]) })
+const c = (label, key) => ({ label, render: (r) => fmtStat(r[key]) })
 const PASSING_COLUMNS = [
   c('C', 'completions'),
   c('ATT', 'attempts'),
@@ -127,20 +134,22 @@ const DEFENSE_COLUMNS = [
   c('QB HITS', 'def_qb_hits'),
   c('PD', 'def_pass_defended'),
 ]
-const INTERCEPTIONS_COLUMNS = [c('INT', 'def_interceptions'), c('YDS', 'def_interception_yards')]
-const FORCED_FUMBLES_COLUMNS = [c('FF', 'def_fumbles_forced')]
-const FUMBLE_RECOVERIES_COLUMNS = [
-  { label: 'FR', render: (r) => fmtCount((r.fumble_recovery_own ?? 0) + (r.fumble_recovery_opp ?? 0)) },
+// Interceptions + forced fumbles + fumble recoveries in one takeaways table
+// (all three are "defense created a turnover", just different mechanisms).
+const TAKEAWAYS_COLUMNS = [
+  c('INT', 'def_interceptions'),
+  c('INT YDS', 'def_interception_yards'),
+  c('FF', 'def_fumbles_forced'),
+  { label: 'FR', render: (r) => fmtStat((r.fumble_recovery_own ?? 0) + (r.fumble_recovery_opp ?? 0)) },
   {
-    label: 'YDS',
-    render: (r) => fmtCount((r.fumble_recovery_yards_own ?? 0) + (r.fumble_recovery_yards_opp ?? 0)),
+    label: 'FR YDS',
+    render: (r) => fmtStat((r.fumble_recovery_yards_own ?? 0) + (r.fumble_recovery_yards_opp ?? 0)),
   },
-  c('TD', 'fumble_recovery_tds'),
 ]
 const KICKING_COLUMNS = [
-  { label: 'FG', render: (r) => `${fmtCount(r.fg_made)}/${fmtCount(r.fg_att)}` },
+  { label: 'FG', render: (r) => (r.fg_att ? `${fmtCount(r.fg_made)}/${r.fg_att}` : '—') },
   c('LNG', 'fg_long'),
-  { label: 'PAT', render: (r) => `${fmtCount(r.pat_made)}/${fmtCount(r.pat_att)}` },
+  { label: 'PAT', render: (r) => (r.pat_att ? `${fmtCount(r.pat_made)}/${r.pat_att}` : '—') },
 ]
 const PUNTING_COLUMNS = [
   c('PUNTS', 'pt_att'),
@@ -156,6 +165,34 @@ const RETURN_COLUMNS = [
   c('PR YDS', 'punt_return_yards'),
   c('TD', 'special_teams_tds'),
 ]
+
+// Away team's colors on the left, home team's on the right, primary at the
+// top fading to secondary at the bottom on each side, with a gray band
+// where the two sides meet in the middle. Built as three stacked
+// background-image layers (a full-width gray fade over two half-width
+// vertical team gradients) since a single CSS gradient can't vary in both
+// directions at once.
+function pageGradientStyle(awayAbbr, homeAbbr) {
+  const away = TEAM_COLORS[awayAbbr]
+  const home = TEAM_COLORS[homeAbbr]
+  if (!away || !home) return {}
+  const alpha = 0.07
+  return {
+    // The gray band sits fully opaque across the center so it reads as one
+    // neutral tone regardless of which two team colors are underneath --
+    // at low alpha the team washes are faint enough that this matters less,
+    // but a plateau (not a single midpoint) keeps the two sides matching
+    // exactly rather than each fading to gray at a very slightly different rate.
+    backgroundImage: [
+      'linear-gradient(to right, transparent 0%, transparent 20%, rgba(115,115,115,0.4) 42%, rgba(115,115,115,0.4) 58%, transparent 80%, transparent 100%)',
+      `linear-gradient(to bottom, ${hexToRgba(away.primary, alpha)}, ${hexToRgba(away.secondary, alpha)})`,
+      `linear-gradient(to bottom, ${hexToRgba(home.primary, alpha)}, ${hexToRgba(home.secondary, alpha)})`,
+    ].join(', '),
+    backgroundSize: '100% 100%, 50% 100%, 50% 100%',
+    backgroundPosition: '0 0, left top, right top',
+    backgroundRepeat: 'no-repeat',
+  }
+}
 
 function recordFor(games, team) {
   let wins = 0
@@ -212,6 +249,21 @@ function TeamHeader({ abbr, name, score, isWinner, played, align }) {
 // One table, three time windows (Pre-game / Season / Game) each split into
 // an away/home sub-column -- matches the grouped-column convention already
 // used by the league table (TeamStatsTable's For/Against columns).
+// Team-colored pill for a column header -- background is the team's own
+// primary color, text picked for contrast against it rather than assumed.
+function TeamAbbrChip({ abbr }) {
+  const colors = TEAM_COLORS[abbr]
+  if (!colors) return <span>{abbr}</span>
+  return (
+    <span
+      className="inline-block rounded px-1.5 py-0.5 font-semibold"
+      style={{ backgroundColor: colors.primary, color: contrastTextColor(colors.primary) }}
+    >
+      {abbr}
+    </span>
+  )
+}
+
 function MatchupStatsTable({ windows, awayAbbr, homeAbbr }) {
   return (
     <div className="mb-8 overflow-x-auto">
@@ -229,8 +281,12 @@ function MatchupStatsTable({ windows, awayAbbr, homeAbbr }) {
             <th></th>
             {windows.map((w) => (
               <Fragment key={w.label}>
-                <th className="px-2 pb-1 text-right font-normal">{awayAbbr}</th>
-                <th className="px-2 pb-1 text-right font-normal">{homeAbbr}</th>
+                <th className="px-2 pb-1 text-right font-normal">
+                  <TeamAbbrChip abbr={awayAbbr} />
+                </th>
+                <th className="px-2 pb-1 text-right font-normal">
+                  <TeamAbbrChip abbr={homeAbbr} />
+                </th>
               </Fragment>
             ))}
           </tr>
@@ -307,7 +363,7 @@ function BoxScoreSection({ title, columns, awayRows, homeRows, awayAbbr, homeAbb
   return (
     <div className="mb-6">
       <h3 className="mb-2 text-xs font-bold uppercase text-neutral-400">{title}</h3>
-      <div className="grid gap-4 overflow-x-auto sm:grid-cols-2">
+      <div className="grid gap-6 overflow-x-auto sm:grid-cols-2 sm:gap-x-12">
         <BoxScoreTeamTable abbr={awayAbbr} rows={awayRows} columns={columns} />
         <BoxScoreTeamTable abbr={homeAbbr} rows={homeRows} columns={columns} />
       </div>
@@ -512,18 +568,24 @@ export default function GamePage() {
     (r) => (r.def_tackles_solo ?? 0) > 0 || (r.def_tackles_with_assist ?? 0) > 0 ||
       (r.def_sacks ?? 0) > 0 || (r.def_tackles_for_loss ?? 0) > 0 || (r.def_qb_hits ?? 0) > 0,
   )
-  const interceptions = byTeam(defense, (r) => (r.def_interceptions ?? 0) > 0)
-  const forcedFumbles = byTeam(defense, (r) => (r.def_fumbles_forced ?? 0) > 0)
-  const fumbleRecoveries = byTeam(
+  const takeaways = byTeam(
     defense,
-    (r) => (r.fumble_recovery_own ?? 0) + (r.fumble_recovery_opp ?? 0) > 0,
+    (r) =>
+      (r.def_interceptions ?? 0) > 0 ||
+      (r.def_fumbles_forced ?? 0) > 0 ||
+      (r.fumble_recovery_own ?? 0) + (r.fumble_recovery_opp ?? 0) > 0,
   )
   const kicking = byTeam(specialTeams, (r) => (r.fg_att ?? 0) > 0 || (r.pat_att ?? 0) > 0)
   const punting = byTeam(specialTeams, (r) => (r.pt_att ?? 0) > 0)
   const returns = byTeam(specialTeams, (r) => (r.kickoff_returns ?? 0) > 0 || (r.punt_returns ?? 0) > 0)
 
   return (
-    <div className="mx-auto w-full max-w-4xl px-4 py-6">
+    <div className="relative">
+      <div
+        className="pointer-events-none absolute inset-0"
+        style={pageGradientStyle(game.away_team, game.home_team)}
+      />
+      <div className="relative mx-auto w-full max-w-4xl px-4 py-6">
       <Link to="/matches" className="mb-4 inline-block text-xs text-neutral-500 hover:underline">
         ← Back to Matches
       </Link>
@@ -630,14 +692,13 @@ export default function GamePage() {
           <BoxScoreSection title="Rushing" columns={RUSHING_COLUMNS} awayRows={rushing.away} homeRows={rushing.home} awayAbbr={game.away_team} homeAbbr={game.home_team} />
           <BoxScoreSection title="Receiving" columns={RECEIVING_COLUMNS} awayRows={receiving.away} homeRows={receiving.home} awayAbbr={game.away_team} homeAbbr={game.home_team} />
           <BoxScoreSection title="Defense" columns={DEFENSE_COLUMNS} awayRows={tackling.away} homeRows={tackling.home} awayAbbr={game.away_team} homeAbbr={game.home_team} />
-          <BoxScoreSection title="Interceptions" columns={INTERCEPTIONS_COLUMNS} awayRows={interceptions.away} homeRows={interceptions.home} awayAbbr={game.away_team} homeAbbr={game.home_team} />
-          <BoxScoreSection title="Forced Fumbles" columns={FORCED_FUMBLES_COLUMNS} awayRows={forcedFumbles.away} homeRows={forcedFumbles.home} awayAbbr={game.away_team} homeAbbr={game.home_team} />
-          <BoxScoreSection title="Fumble Recoveries" columns={FUMBLE_RECOVERIES_COLUMNS} awayRows={fumbleRecoveries.away} homeRows={fumbleRecoveries.home} awayAbbr={game.away_team} homeAbbr={game.home_team} />
+          <BoxScoreSection title="Takeaways" columns={TAKEAWAYS_COLUMNS} awayRows={takeaways.away} homeRows={takeaways.home} awayAbbr={game.away_team} homeAbbr={game.home_team} />
           <BoxScoreSection title="Kicking" columns={KICKING_COLUMNS} awayRows={kicking.away} homeRows={kicking.home} awayAbbr={game.away_team} homeAbbr={game.home_team} />
           <BoxScoreSection title="Punting" columns={PUNTING_COLUMNS} awayRows={punting.away} homeRows={punting.home} awayAbbr={game.away_team} homeAbbr={game.home_team} />
           <BoxScoreSection title="Return" columns={RETURN_COLUMNS} awayRows={returns.away} homeRows={returns.home} awayAbbr={game.away_team} homeAbbr={game.home_team} />
         </>
       )}
+      </div>
     </div>
   )
 }
