@@ -7,6 +7,26 @@ const CONFERENCE_TEXT = {
   AFC: 'text-red-600 dark:text-red-400',
   NFC: 'text-blue-600 dark:text-blue-400',
 }
+// Tints the "Conf" header cell to match whichever conference currently
+// sorts to the top of the table -- a quick visual cue for which
+// conference you're looking at without reading every row.
+const CONFERENCE_HEADER_BG = {
+  AFC: 'bg-pink-100 dark:bg-pink-950/40',
+  NFC: 'bg-sky-100 dark:bg-sky-950/40',
+}
+// The table body scrolls in its own bounded container (see max-h-[75vh]
+// below) rather than the page, so sticky headers stick to the TOP OF THAT
+// CONTAINER (0), not the viewport -- overflow-x:auto on that wrapper forces
+// overflow-y to compute as auto too per the CSS overflow spec, so there's
+// no way to keep the container's own height unbounded and still have
+// sticky use the page as its containing block.
+const HEADER_STICKY_TOP = 0
+// Measured height of GroupedStatsTable's first (group-label) header row --
+// the second (For/Against) row sticks just beneath it.
+const HEADER_ROW1_HEIGHT = 37
+// position:sticky on <thead>/<tr> itself is unreliable across browsers;
+// applying it to each header <th> individually is the robust pattern.
+const STICKY_TH = 'sticky z-20 bg-neutral-50 dark:bg-neutral-900'
 
 const SEASONS = [2026, 2025, 2024]
 const DEFAULT_SEASON = 2025
@@ -153,23 +173,34 @@ function GroupedStatsTable({ rows, groups, sortKey, sortDir, groupByConference, 
     })
   }, [rows, sortKey, sortDir, groupByConference, groups])
 
+  const topConference = sortedRows[0]?.conference
+
   return (
-    <div className="overflow-x-auto">
+    <div className="max-h-[75vh] overflow-auto">
       <table className="w-full min-w-[950px] border-collapse text-sm">
         <thead>
           <tr className="border-b border-neutral-200 text-left text-neutral-500 dark:border-neutral-800">
-            <th className={`${thBase} py-2 pr-2 font-medium`} onClick={() => onSort('team')}>
+            <th
+              className={`${thBase} ${STICKY_TH} py-2 pr-2 font-medium`}
+              style={{ top: HEADER_STICKY_TOP }}
+              onClick={() => onSort('team')}
+            >
               Team
               <SortIndicator active={sortKey === 'team'} dir={sortDir} />
             </th>
             <th
-              className={`${thBase} px-2 py-2 text-left font-medium ${groupByConference ? 'text-neutral-900 dark:text-neutral-100' : ''}`}
+              className={`${thBase} sticky z-20 px-2 py-2 text-left font-medium ${groupByConference ? 'text-neutral-900 dark:text-neutral-100' : ''} ${CONFERENCE_HEADER_BG[topConference] ?? 'bg-neutral-50 dark:bg-neutral-900'}`}
+              style={{ top: HEADER_STICKY_TOP }}
               onClick={onToggleConference}
               title="Toggle grouping by conference"
             >
               Conf
             </th>
-            <th className={`${thBase} px-2 py-2 text-right font-medium`} onClick={() => onSort('win_diff')}>
+            <th
+              className={`${thBase} ${STICKY_TH} px-2 py-2 text-right font-medium`}
+              style={{ top: HEADER_STICKY_TOP }}
+              onClick={() => onSort('win_diff')}
+            >
               Record Diff
               <SortIndicator active={sortKey === 'win_diff'} dir={sortDir} />
             </th>
@@ -177,7 +208,8 @@ function GroupedStatsTable({ rows, groups, sortKey, sortDir, groupByConference, 
               <th
                 key={g.label}
                 colSpan={g.stats.length * 2}
-                className={`${thBase} px-2 py-2 text-center font-medium`}
+                className={`${thBase} ${STICKY_TH} px-2 py-2 text-center font-medium`}
+                style={{ top: HEADER_STICKY_TOP }}
                 onClick={() => onSort(`group:${i}`)}
                 title={g.sortMode === 'sum' ? `Sort by sum of ${g.stats.map((s) => s.label).join(' + ')}` : `Sort by ${g.label} differential`}
               >
@@ -185,27 +217,33 @@ function GroupedStatsTable({ rows, groups, sortKey, sortDir, groupByConference, 
                 <SortIndicator active={sortKey === `group:${i}`} dir={sortDir} />
               </th>
             ))}
-            <th className={`${thBase} py-2 pl-2 text-right font-medium`} onClick={() => onSort('point_diff')}>
+            <th
+              className={`${thBase} ${STICKY_TH} py-2 pl-2 text-right font-medium`}
+              style={{ top: HEADER_STICKY_TOP }}
+              onClick={() => onSort('point_diff')}
+            >
               Point Diff
               <SortIndicator active={sortKey === 'point_diff'} dir={sortDir} />
             </th>
           </tr>
           <tr className="border-b border-neutral-200 text-left text-[11px] text-neutral-400 dark:border-neutral-800">
-            <th></th>
-            <th></th>
-            <th></th>
+            <th className={STICKY_TH} style={{ top: HEADER_STICKY_TOP + HEADER_ROW1_HEIGHT }}></th>
+            <th className={STICKY_TH} style={{ top: HEADER_STICKY_TOP + HEADER_ROW1_HEIGHT }}></th>
+            <th className={STICKY_TH} style={{ top: HEADER_STICKY_TOP + HEADER_ROW1_HEIGHT }}></th>
             {groups.map((g) =>
               g.stats.map((s) => (
                 <Fragment key={s.key}>
                   <th
-                    className={`${thBase} px-2 pb-1 text-right font-normal text-green-600/80 dark:text-green-400/80`}
+                    className={`${thBase} ${STICKY_TH} px-2 pb-1 text-right font-normal text-green-600/80 dark:text-green-400/80`}
+                    style={{ top: HEADER_STICKY_TOP + HEADER_ROW1_HEIGHT }}
                     onClick={() => onSort(`${s.key}:for`)}
                   >
                     {s.label ? `${s.label} For` : 'For'}
                     <SortIndicator active={sortKey === `${s.key}:for`} dir={sortDir} />
                   </th>
                   <th
-                    className={`${thBase} px-2 pb-1 text-right font-normal text-red-600/80 dark:text-red-400/80`}
+                    className={`${thBase} ${STICKY_TH} px-2 pb-1 text-right font-normal text-red-600/80 dark:text-red-400/80`}
+                    style={{ top: HEADER_STICKY_TOP + HEADER_ROW1_HEIGHT }}
                     onClick={() => onSort(`${s.key}:against`)}
                   >
                     {s.label ? `${s.label} Ag` : 'Against'}
@@ -214,7 +252,7 @@ function GroupedStatsTable({ rows, groups, sortKey, sortDir, groupByConference, 
                 </Fragment>
               )),
             )}
-            <th></th>
+            <th className={STICKY_TH} style={{ top: HEADER_STICKY_TOP + HEADER_ROW1_HEIGHT }}></th>
           </tr>
         </thead>
         <tbody>
@@ -270,17 +308,24 @@ function ShareStatsTable({ rows, sortKey, sortDir, groupByConference, onSort, on
     })
   }, [rows, sortKey, sortDir, groupByConference])
 
+  const topConference = sortedRows[0]?.conference
+
   return (
-    <div className="overflow-x-auto">
+    <div className="max-h-[75vh] overflow-auto">
       <table className="w-full min-w-[900px] border-collapse text-sm">
         <thead>
           <tr className="border-b border-neutral-200 text-left text-neutral-500 dark:border-neutral-800">
-            <th className={`${thBase} py-2 pr-2 font-medium`} onClick={() => onSort('team')}>
+            <th
+              className={`${thBase} ${STICKY_TH} py-2 pr-2 font-medium`}
+              style={{ top: HEADER_STICKY_TOP }}
+              onClick={() => onSort('team')}
+            >
               Team
               <SortIndicator active={sortKey === 'team'} dir={sortDir} />
             </th>
             <th
-              className={`${thBase} px-2 py-2 text-left font-medium ${groupByConference ? 'text-neutral-900 dark:text-neutral-100' : ''}`}
+              className={`${thBase} sticky z-20 px-2 py-2 text-left font-medium ${groupByConference ? 'text-neutral-900 dark:text-neutral-100' : ''} ${CONFERENCE_HEADER_BG[topConference] ?? 'bg-neutral-50 dark:bg-neutral-900'}`}
+              style={{ top: HEADER_STICKY_TOP }}
               onClick={onToggleConference}
               title="Toggle grouping by conference"
             >
@@ -289,7 +334,8 @@ function ShareStatsTable({ rows, sortKey, sortDir, groupByConference, onSort, on
             {SHARE_COLUMNS.map((c) => (
               <th
                 key={c.key}
-                className={`${thBase} px-2 py-2 text-right font-medium`}
+                className={`${thBase} ${STICKY_TH} px-2 py-2 text-right font-medium`}
+                style={{ top: HEADER_STICKY_TOP }}
                 onClick={() => onSort(c.key)}
                 title={c.title}
               >
