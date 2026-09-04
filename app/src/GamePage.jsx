@@ -166,32 +166,29 @@ const RETURN_COLUMNS = [
   c('TD', 'special_teams_tds'),
 ]
 
-// Away team's colors on the left, home team's on the right, primary at the
-// top fading to secondary at the bottom on each side, with a gray band
-// where the two sides meet in the middle. Built as three stacked
-// background-image layers (a full-width gray fade over two half-width
-// vertical team gradients) since a single CSS gradient can't vary in both
-// directions at once.
+// Away team's colors in the margin left of the content column, home team's
+// in the margin to its right -- primary at the top fading to secondary at
+// the bottom on each side. The content column is a centered max-w-4xl box,
+// so "margin width" is exactly half of whatever's left over once that's
+// subtracted from the available width -- computed with calc()/max() so it
+// tracks the real layout instead of a guessed percentage, and naturally
+// shrinks to nothing (no color at all) once the viewport can't fit any
+// margin outside the column. Confining each wash to its own margin, rather
+// than spanning the full width like before, means it never sits behind the
+// tables and there's no seam to blend since the two sides never meet.
 function pageGradientStyle(awayAbbr, homeAbbr) {
   const away = TEAM_COLORS[awayAbbr]
   const home = TEAM_COLORS[homeAbbr]
   if (!away || !home) return {}
-  const alpha = 0.07
+  const alpha = 0.16
+  const marginWidth = 'max(0px, calc((100% - 56rem) / 2))'
   return {
-    // The away/home team washes are each their own 50%-wide layer, so they
-    // butt up against each other at a hard edge right at the center -- at
-    // 0.4 alpha the gray band was translucent enough that each side's own
-    // (different) team color still showed through it, leaving a visible
-    // seam exactly where the two layers meet. Near-opaque (0.92) fully
-    // covers that edge across a wide enough band that both sides render as
-    // the identical gray, not just a similar one.
     backgroundImage: [
-      'linear-gradient(to right, transparent 0%, transparent 20%, rgba(115,115,115,0.92) 42%, rgba(115,115,115,0.92) 58%, transparent 80%, transparent 100%)',
       `linear-gradient(to bottom, ${hexToRgba(away.primary, alpha)}, ${hexToRgba(away.secondary, alpha)})`,
       `linear-gradient(to bottom, ${hexToRgba(home.primary, alpha)}, ${hexToRgba(home.secondary, alpha)})`,
     ].join(', '),
-    backgroundSize: '100% 100%, 50% 100%, 50% 100%',
-    backgroundPosition: '0 0, left top, right top',
+    backgroundSize: `${marginWidth} 100%, ${marginWidth} 100%`,
+    backgroundPosition: 'left top, right top',
     backgroundRepeat: 'no-repeat',
   }
 }
