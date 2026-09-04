@@ -622,91 +622,100 @@ export default function PlayerPage() {
       }
     }
 
+    // Fired as a few small sequential batches rather than one dozen-query
+    // burst -- the free-tier Postgres connection pool only comfortably
+    // handles a handful of concurrent requests, and firing all of them at
+    // once was intermittently exhausting it (a random query in the batch
+    // would queue behind the rest and occasionally hit the statement
+    // timeout entirely, most visible on heavily-statted long-career
+    // players with the most rows to join/sort). Each batch still runs
+    // concurrently within itself; only the number of batches adds latency.
     Promise.all([
       supabase.from('players').select('*').eq('player_id', playerId).maybeSingle(),
       supabase.from('depth_chart_ranks').select('*').eq('player_id', playerId).order('rank'),
       supabase.from('current_injury_report').select('*').eq('player_id', playerId).maybeSingle(),
-      supabase
-        .from('player_offense_stats')
-        .select('*, games!inner(season, week, game_type)')
-        .eq('player_id', playerId)
-        .order('season', { foreignTable: 'games' })
-        .order('week', { foreignTable: 'games' }),
-      supabase
-        .from('player_defense_stats')
-        .select('*, games!inner(season, week, game_type)')
-        .eq('player_id', playerId)
-        .order('season', { foreignTable: 'games' })
-        .order('week', { foreignTable: 'games' }),
-      supabase
-        .from('player_special_teams_stats')
-        .select('*, games!inner(season, week, game_type)')
-        .eq('player_id', playerId)
-        .order('season', { foreignTable: 'games' })
-        .order('week', { foreignTable: 'games' }),
-      supabase
-        .from('player_snap_counts')
-        .select('*, games!inner(season, week, game_type)')
-        .eq('player_id', playerId)
-        .order('season', { foreignTable: 'games' })
-        .order('week', { foreignTable: 'games' }),
-      supabase.from('college_player_season_stats').select('*').eq('player_id', playerId).order('season'),
-      supabase
-        .from('college_rosters')
-        .select('*')
-        .eq('player_id', playerId)
-        .order('season', { ascending: false })
-        .limit(1)
-        .maybeSingle(),
-      supabase.from('injuries').select('*').eq('player_id', playerId).order('season').order('week'),
-      supabase.from('trades').select('*').eq('player_id', playerId).order('trade_date', { ascending: false }),
       supabase.from('teams').select('team_abbr, team_name').in('team_abbr', CURRENT_TEAMS),
-    ]).then(
-      ([
-        playerRes,
-        depthRes,
-        injuryRes,
-        offenseRes,
-        defenseRes,
-        specialRes,
-        snapCountsRes,
-        collegeSeasonsRes,
-        collegeRosterRes,
-        injuryHistoryRes,
-        tradesRes,
-        teamsRes,
-      ]) => {
-        if (cancelled) return
-        const err =
-          playerRes.error ||
-          depthRes.error ||
-          injuryRes.error ||
-          offenseRes.error ||
-          defenseRes.error ||
-          specialRes.error ||
-          snapCountsRes.error ||
-          collegeSeasonsRes.error ||
-          collegeRosterRes.error ||
-          injuryHistoryRes.error ||
-          tradesRes.error ||
-          teamsRes.error
-        if (err) {
-          setError(err.message)
-          setLoading(false)
-          return
-        }
+    ])
+      .then(([playerRes, depthRes, injuryRes, teamsRes]) => {
+        if (cancelled) return Promise.reject({ handled: true })
+        const err = playerRes.error || depthRes.error || injuryRes.error || teamsRes.error
+        if (err) throw err
         setPlayer(playerRes.data)
         setDepthChart(depthRes.data)
         setInjury(injuryRes.data)
+        setTeams(teamsRes.data)
+
+        return Promise.all([
+          supabase
+            .from('player_offense_stats')
+            .select('*, games!inner(season, week, game_type)')
+            .eq('player_id', playerId)
+            .order('season', { foreignTable: 'games' })
+            .order('week', { foreignTable: 'games' }),
+          supabase
+            .from('player_defense_stats')
+            .select('*, games!inner(season, week, game_type)')
+            .eq('player_id', playerId)
+            .order('season', { foreignTable: 'games' })
+            .order('week', { foreignTable: 'games' }),
+        ])
+      })
+      .then(([offenseRes, defenseRes]) => {
+        if (cancelled) return Promise.reject({ handled: true })
+        const err = offenseRes.error || defenseRes.error
+        if (err) throw err
         setOffenseRows(offenseRes.data)
         setDefenseRows(defenseRes.data)
+
+        return Promise.all([
+          supabase
+            .from('player_special_teams_stats')
+            .select('*, games!inner(season, week, game_type)')
+            .eq('player_id', playerId)
+            .order('season', { foreignTable: 'games' })
+            .order('week', { foreignTable: 'games' }),
+          supabase
+            .from('player_snap_counts')
+            .select('*, games!inner(season, week, game_type)')
+            .eq('player_id', playerId)
+            .order('season', { foreignTable: 'games' })
+            .order('week', { foreignTable: 'games' }),
+        ])
+      })
+      .then(([specialRes, snapCountsRes]) => {
+        if (cancelled) return Promise.reject({ handled: true })
+        const err = specialRes.error || snapCountsRes.error
+        if (err) throw err
         setSpecialTeamsRows(specialRes.data)
         setSnapCountsRaw(snapCountsRes.data)
+
+        return Promise.all([
+          supabase.from('college_player_season_stats').select('*').eq('player_id', playerId).order('season'),
+          supabase
+            .from('college_rosters')
+            .select('*')
+            .eq('player_id', playerId)
+            .order('season', { ascending: false })
+            .limit(1)
+            .maybeSingle(),
+          supabase.from('injuries').select('*').eq('player_id', playerId).order('season').order('week'),
+          supabase.from('trades').select('*').eq('player_id', playerId).order('trade_date', { ascending: false }),
+        ]).then(([collegeSeasonsRes, collegeRosterRes, injuryHistoryRes, tradesRes]) => [
+          snapCountsRes,
+          collegeSeasonsRes,
+          collegeRosterRes,
+          injuryHistoryRes,
+          tradesRes,
+        ])
+      })
+      .then(([snapCountsRes, collegeSeasonsRes, collegeRosterRes, injuryHistoryRes, tradesRes]) => {
+        if (cancelled) return
+        const err = collegeSeasonsRes.error || collegeRosterRes.error || injuryHistoryRes.error || tradesRes.error
+        if (err) throw err
         setCollegeSeasons(collegeSeasonsRes.data)
         setCollegeRoster(collegeRosterRes.data)
         setInjuryHistory(injuryHistoryRes.data)
         setTrades(tradesRes.data)
-        setTeams(teamsRes.data)
 
         // Team-level per-game context (offensive snaps run, sacks/QB hits
         // allowed) for the OL section -- fetched as a follow-up query since
@@ -731,8 +740,12 @@ export default function PlayerPage() {
             else setTeamGameStatsRows(data)
             setLoading(false)
           })
-      },
-    )
+      })
+      .catch((err) => {
+        if (cancelled || err?.handled) return
+        setError(err.message ?? String(err))
+        setLoading(false)
+      })
 
     return () => {
       cancelled = true
