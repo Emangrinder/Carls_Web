@@ -193,7 +193,7 @@ function computeStatLines(p, popupData) {
     }
     case 'dl': {
       const val = def ? (def.def_sacks ?? 0) + (def.def_qb_hits ?? 0) + (def.def_tackles_for_loss ?? 0) : null
-      return [{ label: 'Hits+Sacks+TFL', value: fmtStat(val, 1) }]
+      return [{ label: 'Pressure', value: fmtStat(val, 1) }]
     }
     case 'lb': {
       const val = def ? (def.def_tackles_solo ?? 0) + (def.def_tackles_with_assist ?? 0) : null
@@ -203,12 +203,13 @@ function computeStatLines(p, popupData) {
     case 's': {
       // PD and INT deliberately double-count (an int is technically also a
       // PD in the raw data, but stacking both values more accurately shows
-      // playmaking impact) -- explicit user call, not an oversight.
+      // playmaking impact) -- explicit user call, not an oversight. PD is
+      // additionally weighted 2x relative to INT/tackles.
       const val = def
-        ? (def.def_pass_defended ?? 0) + (def.def_interceptions ?? 0) +
+        ? 2 * (def.def_pass_defended ?? 0) + (def.def_interceptions ?? 0) +
           0.5 * ((def.def_tackles_solo ?? 0) + (def.def_tackles_with_assist ?? 0))
         : null
-      return [{ label: 'PD+INT+½Tkl', value: fmtStat(val, 1) }]
+      return [{ label: 'Coverage', value: fmtStat(val, 1) }]
     }
     case 'st': {
       if (p.position_abbr === 'PK') return [{ label: `${STATS_SEASON} FGs Made`, value: fmtStat(st?.fg_made) }]
@@ -233,6 +234,14 @@ function snapCountFor(p, popupData) {
   if (category === 'dl' || category === 'lb' || category === 'cb' || category === 's') return snaps.defense_snaps
   if (category === 'st') return snaps.st_snaps
   return null
+}
+
+// "Next up" bubble only -- keeps the first initial so it doesn't read as a
+// bare surname with no context for who it is.
+function firstInitialLastName(fullName) {
+  if (!fullName) return '—'
+  const [first, ...rest] = fullName.split(' ')
+  return rest.length ? `${first[0]}. ${rest.join(' ')}` : fullName
 }
 
 // Drops just the first token (first name), keeping the rest -- handles
@@ -350,6 +359,7 @@ function HoverSidePanels({ hoverInfo, popupData, findNextUp }) {
   const centerX = rect.left + rect.width / 2
   const number = popupData?.numberByPlayer.get(p.player_id)
   const snapCount = popupData ? snapCountFor(p, popupData) : null
+  const snapTeams = popupData?.snapTeamsByPlayer.get(p.player_id) ?? []
   const statLines = popupData ? computeStatLines(p, popupData) : []
   const hasStats = popupData && (number != null || snapCount != null || statLines.length > 0)
   const nextUp = findNextUp(p)
@@ -366,8 +376,19 @@ function HoverSidePanels({ hoverInfo, popupData, findNextUp }) {
             transform: 'translateY(-100%)',
           }}
         >
-          <div className="font-semibold text-neutral-900 dark:text-neutral-100">
-            #{number ?? '—'} · {snapCount ?? '—'} snaps
+          <div className="flex items-center gap-1 font-semibold text-neutral-900 dark:text-neutral-100">
+            <span>
+              #{number ?? '—'} · {snapCount ?? '—'} snaps
+            </span>
+            {snapTeams.map((team) => (
+              <img
+                key={team}
+                src={`${import.meta.env.BASE_URL}logos/${team}.png`}
+                alt={team}
+                title={team}
+                className="h-[1em] w-[1em] shrink-0 object-contain"
+              />
+            ))}
           </div>
           {statLines.map((l) => (
             <div key={l.label} className="text-neutral-500">
@@ -381,7 +402,7 @@ function HoverSidePanels({ hoverInfo, popupData, findNextUp }) {
           className="pointer-events-none fixed z-40 whitespace-nowrap rounded border border-neutral-300 bg-white px-2 py-1 text-[11px] shadow-lg dark:border-neutral-700 dark:bg-neutral-900"
           style={{ left: clampedLeft(centerX, NEXTUP_PANEL_WIDTH), width: NEXTUP_PANEL_WIDTH, top: rect.bottom + 8 }}
         >
-          Next: {lastNameOnly(nextUp.player_name)}
+          Next: {firstInitialLastName(nextUp.player_name)}
         </div>
       )}
     </>
@@ -396,6 +417,24 @@ function InjuryLegend() {
         <span key={status} className="flex items-center gap-1.5">
           <span className={`inline-block h-3 w-3 rounded border ${style.swatch}`} />
           {status}
+        </span>
+      ))}
+    </div>
+  )
+}
+
+const STAT_LEGEND_ENTRIES = [
+  { label: 'Pressure', explanation: 'Sacks + QB Hits + TFL' },
+  { label: 'Coverage', explanation: '2×Pass Defended + INT + ½×Tackles' },
+]
+
+function StatLegend() {
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-4 text-xs text-neutral-500">
+      <span className="font-medium text-neutral-400">Depth chart hover stats:</span>
+      {STAT_LEGEND_ENTRIES.map(({ label, explanation }) => (
+        <span key={label}>
+          <span className="text-neutral-400">{label}:</span> {explanation}
         </span>
       ))}
     </div>
@@ -589,11 +628,23 @@ export default function TeamPage() {
       ])
       const stByPlayer = aggregateRowsByPlayer(stRes.data, ['fg_made', 'pt_yards', 'pt_att', 'kickoff_returns', 'punt_returns'])
       const snapByPlayer = aggregateRowsByPlayer(snapRes.data, ['offense_snaps', 'defense_snaps', 'st_snaps'])
+      // player_season_snap_counts has one row per team a player suited up
+      // for that season -- a trade mid-year means more than one, so track
+      // the distinct teams (in row order) to show alongside the snap count.
+      const snapTeamsByPlayer = new Map()
+      for (const r of snapRes.data) {
+        const teams = snapTeamsByPlayer.get(r.player_id) ?? []
+        if (!teams.includes(r.team)) teams.push(r.team)
+        snapTeamsByPlayer.set(r.player_id, teams)
+      }
       // Percentages, not counts -- summing across a mid-season trade's two
       // team rows wouldn't mean anything, so just keep one (last) row.
       const shareByPlayer = new Map(shareRes.data.map((r) => [r.player_id, r]))
       const teamPriorOffenseSnaps = teamGamesRes.data.reduce((acc, g) => acc + (g.offense_snaps ?? 0), 0)
-      setPopupData({ numberByPlayer, offenseByPlayer, defenseByPlayer, stByPlayer, snapByPlayer, shareByPlayer, teamPriorOffenseSnaps })
+      setPopupData({
+        numberByPlayer, offenseByPlayer, defenseByPlayer, stByPlayer, snapByPlayer, snapTeamsByPlayer,
+        shareByPlayer, teamPriorOffenseSnaps,
+      })
     })
 
     return () => {
@@ -875,6 +926,7 @@ export default function TeamPage() {
       </div>
 
       <InjuryLegend />
+      <StatLegend />
 
       <HoverSidePanels hoverInfo={hoverInfo} popupData={popupData} findNextUp={findNextUp} />
     </div>
