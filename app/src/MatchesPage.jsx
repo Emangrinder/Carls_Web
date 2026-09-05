@@ -81,7 +81,7 @@ function MatchRow({ game, teamsByAbbr }) {
   return (
     <div
       onClick={() => navigate(`/matches/${game.game_id}`)}
-      className="mb-2 flex cursor-pointer items-center gap-4 rounded-lg border border-neutral-200 px-3 py-3 hover:bg-neutral-50 dark:border-neutral-800 dark:hover:bg-neutral-900/60"
+      className="relative z-0 mb-2 flex cursor-pointer items-center gap-4 rounded-lg border border-neutral-200 px-3 py-3 transition-transform duration-150 hover:z-10 hover:scale-[1.03] hover:bg-neutral-50 dark:border-neutral-800 dark:hover:bg-neutral-900/60"
     >
       <div className="w-14 shrink-0 text-xs text-neutral-400">{kickoff ?? ''}</div>
       <TeamSide
