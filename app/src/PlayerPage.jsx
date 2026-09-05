@@ -462,6 +462,26 @@ const RETURNS_COLUMNS = [
   { header: 'KR Yds', render: (r) => fmtNum(r.kickoff_return_yards) },
 ]
 
+// Applied points from player_season_fantasy_points -- computed per the
+// Fantasy Rules formulas (app/src/fantasyRulesData.js) universally, so
+// every category column can be non-zero regardless of this player's own
+// primary position. See etl/data/nflverse/build_fantasy_scores.py for
+// exactly which sub-bonuses aren't computable from our per-game
+// aggregates (mainly TD-length tiers) and are therefore left out.
+const FANTASY_COLUMNS = [
+  { header: 'Total', render: (r) => r.total_points },
+  { header: 'Avg', render: (r) => r.avg_points },
+  { header: 'Passing', render: (r) => fmtNum(r.passing_points) },
+  { header: 'Rushing', render: (r) => fmtNum(r.rushing_points) },
+  { header: 'Receiving', render: (r) => fmtNum(r.receiving_points) },
+  { header: 'Blocking Bonus', render: (r) => fmtNum(r.blocking_bonus_points) },
+  { header: 'Fumbles/Fouls', render: (r) => fmtNum(r.fumbles_fouls_points) },
+  { header: 'Defense', render: (r) => fmtNum(r.defense_points) },
+  { header: 'Kicking', render: (r) => fmtNum(r.kicking_points) },
+  { header: 'Punting', render: (r) => fmtNum(r.punting_points) },
+  { header: 'Returning', render: (r) => fmtNum(r.returning_points) },
+]
+
 // nflverse's `players.position` uses generic O-line codes (OT/G/C/T/OL),
 // unlike depth_chart_ranks' side-specific abbreviations (LT/LG/C/RG/RT).
 const OL_POSITIONS = new Set(['OT', 'G', 'C', 'T', 'OL', 'LT', 'RT', 'LG', 'RG'])
@@ -563,6 +583,7 @@ export default function PlayerPage() {
   const [injuryHistory, setInjuryHistory] = useState([])
   const [trades, setTrades] = useState([])
   const [teams, setTeams] = useState([])
+  const [fantasyPoints, setFantasyPoints] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
@@ -614,6 +635,7 @@ export default function PlayerPage() {
         setTeamGameStatsRows([])
         setInjuryHistory([])
         setTrades([])
+        setFantasyPoints([])
         setTeams(teamsRes.data)
         setLoading(false)
       })
@@ -700,22 +722,27 @@ export default function PlayerPage() {
             .maybeSingle(),
           supabase.from('injuries').select('*').eq('player_id', playerId).order('season').order('week'),
           supabase.from('trades').select('*').eq('player_id', playerId).order('trade_date', { ascending: false }),
-        ]).then(([collegeSeasonsRes, collegeRosterRes, injuryHistoryRes, tradesRes]) => [
+          supabase.from('player_season_fantasy_points').select('*').eq('player_id', playerId).order('season'),
+        ]).then(([collegeSeasonsRes, collegeRosterRes, injuryHistoryRes, tradesRes, fantasyPointsRes]) => [
           snapCountsRes,
           collegeSeasonsRes,
           collegeRosterRes,
           injuryHistoryRes,
           tradesRes,
+          fantasyPointsRes,
         ])
       })
-      .then(([snapCountsRes, collegeSeasonsRes, collegeRosterRes, injuryHistoryRes, tradesRes]) => {
+      .then(([snapCountsRes, collegeSeasonsRes, collegeRosterRes, injuryHistoryRes, tradesRes, fantasyPointsRes]) => {
         if (cancelled) return
-        const err = collegeSeasonsRes.error || collegeRosterRes.error || injuryHistoryRes.error || tradesRes.error
+        const err =
+          collegeSeasonsRes.error || collegeRosterRes.error || injuryHistoryRes.error || tradesRes.error ||
+          fantasyPointsRes.error
         if (err) throw err
         setCollegeSeasons(collegeSeasonsRes.data)
         setCollegeRoster(collegeRosterRes.data)
         setInjuryHistory(injuryHistoryRes.data)
         setTrades(tradesRes.data)
+        setFantasyPoints(fantasyPointsRes.data)
 
         // Team-level per-game context (offensive snaps run, sacks/QB hits
         // allowed) for the OL section -- fetched as a follow-up query since
@@ -849,6 +876,24 @@ export default function PlayerPage() {
   const hasKicking = kickingSeasons.some((r) => (r.fg_att ?? 0) > 0 || (r.pat_att ?? 0) > 0)
   const hasPunting = puntingSeasons.some((r) => (r.pt_att ?? 0) > 0)
   const hasReturns = returnsSeasons.some((r) => (r.punt_returns ?? 0) > 0 || (r.kickoff_returns ?? 0) > 0)
+
+  // Career row = a straight sum of the season rows already computed
+  // server-side (player_season_fantasy_points), not a separate query.
+  const fantasyRows = useMemo(() => {
+    if (fantasyPoints.length === 0) return []
+    const totals = sumFields(fantasyPoints, [
+      'games', 'passing_points', 'rushing_points', 'receiving_points', 'blocking_bonus_points',
+      'fumbles_fouls_points', 'defense_points', 'kicking_points', 'punting_points', 'returning_points',
+      'total_points',
+    ])
+    const career = {
+      season: 'Career',
+      ...totals,
+      avg_points: totals.games ? Math.round((totals.total_points / totals.games) * 10) / 10 : null,
+      isTotal: true,
+    }
+    return [...fantasyPoints, career]
+  }, [fantasyPoints])
 
   const hasCollegePassing = collegeCareer.some((r) => (r.pass_att ?? 0) > 0)
   const hasCollegeRushRec = collegeCareer.some((r) => (r.rush_att ?? 0) > 0 || (r.targets ?? 0) > 0)
@@ -1022,6 +1067,24 @@ export default function PlayerPage() {
             columns={RETURNS_COLUMNS}
             snapKey="st_snaps"
           />
+        )}
+
+        {/* Fantasy points */}
+        {fantasyRows.length > 0 && (
+          <>
+            <h2 className="mb-2 mt-4 text-sm font-semibold uppercase tracking-wide text-neutral-500">
+              Fantasy Points
+            </h2>
+            <p className="mb-3 max-w-2xl text-xs text-neutral-400">
+              Applied from the{' '}
+              <Link to="/rules" className="underline">
+                Fantasy Rules
+              </Link>{' '}
+              formulas, universally -- any category can be non-zero here regardless of this player's
+              own primary position.
+            </p>
+            <SeasonStatTable title="By Season" rows={fantasyRows} columns={FANTASY_COLUMNS} />
+          </>
         )}
 
         {/* College career */}

@@ -228,3 +228,24 @@ CREATE TABLE player_special_teams_stats (
     penalty_yards         INTEGER,
     PRIMARY KEY (player_id, game_id)
 );
+
+-- Computed by build_fantasy_scores.py from the three tables above, applying
+-- the Fantasy Rules scoring formulas (app/src/fantasyRulesData.js)
+-- universally -- see that script's own docstring for exactly which
+-- sub-bonuses are and aren't computable from these aggregates.
+CREATE TABLE player_game_fantasy_points (
+    player_id              TEXT REFERENCES players(player_id),
+    game_id                TEXT REFERENCES games(game_id),
+    team                   TEXT,
+    passing_points         REAL,
+    rushing_points         REAL,
+    receiving_points       REAL,
+    blocking_bonus_points  REAL,
+    fumbles_fouls_points   REAL,
+    defense_points         REAL,
+    kicking_points         REAL,
+    punting_points         REAL,
+    returning_points       REAL,
+    total_points           REAL NOT NULL,
+    PRIMARY KEY (player_id, game_id)
+);

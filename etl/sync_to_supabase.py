@@ -113,6 +113,12 @@ TABLE_SPECS = [
         "penalties", "penalty_yards",
     ], season_sources("player_special_teams_stats"), None),
 
+    ("player_game_fantasy_points", [
+        "player_id", "game_id", "team", "passing_points", "rushing_points", "receiving_points",
+        "blocking_bonus_points", "fumbles_fouls_points", "defense_points", "kicking_points",
+        "punting_points", "returning_points", "total_points",
+    ], season_sources("player_game_fantasy_points"), None),
+
     ("college_rosters", ["athlete_id", "player_id", "first_name", "last_name", "full_name",
                          "team", "position", "jersey", "class_year", "height", "weight",
                          "home_city", "home_state", "headshot_url", "season"],
@@ -160,6 +166,7 @@ TABLE_SPECS = [
 PLAYER_ID_COLUMN_BY_TABLE = {
     "player_snap_counts": "player_id", "player_offense_stats": "player_id",
     "player_defense_stats": "player_id", "player_special_teams_stats": "player_id",
+    "player_game_fantasy_points": "player_id",
     "college_rosters": "player_id", "college_player_season_stats": "player_id",
     "active_roster": "player_id", "current_injury_report": "player_id",
     "depth_chart_ranks": "player_id", "injuries": "player_id",
@@ -176,6 +183,7 @@ PK_COLUMNS = {
     "player_offense_stats": ["player_id", "game_id"],
     "player_defense_stats": ["player_id", "game_id"],
     "player_special_teams_stats": ["player_id", "game_id"],
+    "player_game_fantasy_points": ["player_id", "game_id"],
     "college_rosters": ["athlete_id", "season"],
     "college_player_season_stats": ["athlete_id", "season"],
     "active_roster": ["player_id"], "current_injury_report": ["player_id"],
@@ -246,7 +254,8 @@ def main():
     # on team_season_stats/player_season_offense_stats, so they refresh last.
     for view in ["team_game_stats", "team_season_stats", "player_season_offense_stats",
                  "player_season_defense_stats", "player_season_special_teams_stats",
-                 "player_season_snap_counts", "team_share_stats", "player_season_share_stats"]:
+                 "player_season_snap_counts", "team_share_stats", "player_season_share_stats",
+                 "player_season_fantasy_points"]:
         run_psql(f"REFRESH MATERIALIZED VIEW {view};")
 
     print("Done.")
