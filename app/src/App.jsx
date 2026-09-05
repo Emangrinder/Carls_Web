@@ -7,6 +7,7 @@ import GamePage from './GamePage'
 import DivisionNav from './DivisionNav'
 import Footer from './Footer'
 import PlayerPage from './PlayerPage'
+import FantasyRulesPage from './FantasyRulesPage'
 
 function App() {
   return (
@@ -22,6 +23,7 @@ function App() {
               <Route path="/matches/:gameId" element={<GamePage />} />
               <Route path="/team/:teamAbbr" element={<TeamPage />} />
               <Route path="/player/:playerId" element={<PlayerPage />} />
+              <Route path="/rules" element={<FantasyRulesPage />} />
             </Routes>
           </div>
         </div>
