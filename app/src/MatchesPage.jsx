@@ -7,8 +7,9 @@ import LoadingSpinner from './LoadingSpinner'
 const SEASONS = [2026, 2025, 2024]
 const DEFAULT_SEASON = 2025
 const REG_WEEKS = Array.from({ length: 18 }, (_, i) => i + 1)
-const REG_WEEKS_ROW1 = REG_WEEKS.slice(0, 9)
-const REG_WEEKS_ROW2 = REG_WEEKS.slice(9)
+const REG_WEEKS_ROW1 = REG_WEEKS.slice(0, 6)
+const REG_WEEKS_ROW2 = REG_WEEKS.slice(6, 12)
+const REG_WEEKS_ROW3 = REG_WEEKS.slice(12)
 const POSTSEASON_TABS = [
   { gameType: 'WC', label: 'WC' },
   { gameType: 'DIV', label: 'DIV' },
@@ -197,30 +198,20 @@ export default function MatchesPage() {
         ))}
       </div>
 
-      <div className="mb-1.5 flex flex-wrap gap-1.5">
-        {REG_WEEKS_ROW1.map((w) => (
-          <button
-            key={w}
-            type="button"
-            onClick={() => setTab({ kind: 'week', week: w })}
-            className={`${tabBase} ${isActive({ kind: 'week', week: w }) ? tabActive : tabInactive}`}
-          >
-            {w}
-          </button>
-        ))}
-      </div>
-      <div className="mb-2 flex flex-wrap gap-1.5">
-        {REG_WEEKS_ROW2.map((w) => (
-          <button
-            key={w}
-            type="button"
-            onClick={() => setTab({ kind: 'week', week: w })}
-            className={`${tabBase} ${isActive({ kind: 'week', week: w }) ? tabActive : tabInactive}`}
-          >
-            {w}
-          </button>
-        ))}
-      </div>
+      {[REG_WEEKS_ROW1, REG_WEEKS_ROW2, REG_WEEKS_ROW3].map((weekRow, i) => (
+        <div key={i} className={`flex flex-wrap gap-1.5 ${i === 2 ? 'mb-2' : 'mb-1.5'}`}>
+          {weekRow.map((w) => (
+            <button
+              key={w}
+              type="button"
+              onClick={() => setTab({ kind: 'week', week: w })}
+              className={`${tabBase} ${isActive({ kind: 'week', week: w }) ? tabActive : tabInactive}`}
+            >
+              {w}
+            </button>
+          ))}
+        </div>
+      ))}
       <div className="mb-6 flex flex-wrap gap-1.5">
         {POSTSEASON_TABS.map((p) => (
           <button

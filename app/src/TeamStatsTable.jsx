@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from './supabaseClient'
 import LoadingSpinner from './LoadingSpinner'
@@ -14,12 +14,16 @@ const CONFERENCE_HEADER_BG = {
   AFC: 'bg-pink-100 dark:bg-pink-950/40',
   NFC: 'bg-sky-100 dark:bg-sky-950/40',
 }
-// The table body scrolls in its own bounded container (see max-h-[75vh]
-// below) rather than the page, so sticky headers stick to the TOP OF THAT
-// CONTAINER (0), not the viewport -- overflow-x:auto on that wrapper forces
-// overflow-y to compute as auto too per the CSS overflow spec, so there's
-// no way to keep the container's own height unbounded and still have
-// sticky use the page as its containing block.
+// The table body scrolls in its own bounded container rather than the
+// page, so sticky headers stick to the top of THAT container (0), not the
+// viewport -- overflow-x:auto on the wrapper forces overflow-y to compute
+// as auto too per the CSS overflow spec, which makes it the sticky
+// containing block regardless of whether it currently has anything to
+// scroll internally. So the container's height is measured (see
+// useStickyScrollHeight below) to exactly fill the remaining viewport
+// below whatever's above it -- that way the page itself never has room to
+// scroll independently, and the container's own top edge -- where the
+// header sticks -- stays glued directly under the ribbon at all times.
 const HEADER_STICKY_TOP = 0
 // Measured height of GroupedStatsTable's first (group-label) header row --
 // the second (For/Against) row sticks just beneath it.
@@ -28,9 +32,42 @@ const HEADER_ROW1_HEIGHT = 37
 // applying it to each header <th> individually is the robust pattern.
 const STICKY_TH = 'sticky z-20 bg-neutral-50 dark:bg-neutral-900'
 
+// Measures how much vertical space is left below the wrapper (down to the
+// bottom of the viewport) so the scroll container can be sized to exactly
+// fill it -- see the comment on HEADER_STICKY_TOP above for why that
+// matters for the sticky header.
+function useStickyScrollHeight() {
+  const ref = useRef(null)
+  const [maxHeight, setMaxHeight] = useState(null)
+
+  useEffect(() => {
+    function update() {
+      // A momentarily zero/unavailable innerHeight (e.g. a backgrounded tab
+      // mid-layout) would otherwise compute a bogus negative max-height.
+      if (ref.current && window.innerHeight > 0) {
+        setMaxHeight(window.innerHeight - ref.current.getBoundingClientRect().top)
+      }
+    }
+    update()
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [])
+
+  return { ref, maxHeight }
+}
+
 const SEASONS = [2026, 2025, 2024]
 const DEFAULT_SEASON = 2025
-const CONFERENCE_ORDER = { AFC: 0, NFC: 1 }
+
+// Clicking the Conf header cycles null -> 'AFC' -> 'NFC' -> null; whichever
+// one is active sorts to the top of the table (and tints the header to
+// match), rather than always forcing AFC first regardless of which the
+// header was showing.
+function conferenceSortDiff(confGroup, a, b) {
+  if (!confGroup) return 0
+  const rank = (conf) => (conf === confGroup ? 0 : 1)
+  return rank(a.conference) - rank(b.conference)
+}
 
 function fmtDiff(n) {
   if (n == null) return '—'
@@ -161,22 +198,23 @@ function TeamCell({ team }) {
   )
 }
 
-function GroupedStatsTable({ rows, groups, sortKey, sortDir, groupByConference, onSort, onToggleConference }) {
+function GroupedStatsTable({ rows, groups, sortKey, sortDir, confGroup, onSort, onToggleConference }) {
   const thBase = 'cursor-pointer select-none hover:text-neutral-900 dark:hover:text-neutral-100'
+  const { ref, maxHeight } = useStickyScrollHeight()
 
   const sortedRows = useMemo(() => {
     const byValue = (a, b) => compareRows(a, b, sortKey, sortDir, groups)
-    if (!groupByConference) return [...rows].sort(byValue)
+    if (!confGroup) return [...rows].sort(byValue)
     return [...rows].sort((a, b) => {
-      const confDiff = CONFERENCE_ORDER[a.conference] - CONFERENCE_ORDER[b.conference]
+      const confDiff = conferenceSortDiff(confGroup, a, b)
       return confDiff !== 0 ? confDiff : byValue(a, b)
     })
-  }, [rows, sortKey, sortDir, groupByConference, groups])
+  }, [rows, sortKey, sortDir, confGroup, groups])
 
-  const topConference = sortedRows[0]?.conference
+  const topConference = confGroup ?? sortedRows[0]?.conference
 
   return (
-    <div className="max-h-[75vh] overflow-auto">
+    <div ref={ref} className="overflow-auto" style={{ maxHeight: maxHeight ?? undefined }}>
       <table className="w-full min-w-[950px] border-collapse text-sm">
         <thead>
           <tr className="border-b border-neutral-200 text-left text-neutral-500 dark:border-neutral-800">
@@ -189,10 +227,10 @@ function GroupedStatsTable({ rows, groups, sortKey, sortDir, groupByConference, 
               <SortIndicator active={sortKey === 'team'} dir={sortDir} />
             </th>
             <th
-              className={`${thBase} sticky z-20 px-2 py-2 text-left font-medium ${groupByConference ? 'text-neutral-900 dark:text-neutral-100' : ''} ${CONFERENCE_HEADER_BG[topConference] ?? 'bg-neutral-50 dark:bg-neutral-900'}`}
+              className={`${thBase} sticky z-20 px-2 py-2 text-left font-medium ${confGroup ? 'text-neutral-900 dark:text-neutral-100' : ''} ${CONFERENCE_HEADER_BG[topConference] ?? 'bg-neutral-50 dark:bg-neutral-900'}`}
               style={{ top: HEADER_STICKY_TOP }}
               onClick={onToggleConference}
-              title="Toggle grouping by conference"
+              title="Cycle grouping: off / AFC on top / NFC on top"
             >
               Conf
             </th>
@@ -292,8 +330,9 @@ const SHARE_COLUMNS = [
   { key: 'pr_share_pct', label: 'Top PR %' },
 ]
 
-function ShareStatsTable({ rows, sortKey, sortDir, groupByConference, onSort, onToggleConference }) {
+function ShareStatsTable({ rows, sortKey, sortDir, confGroup, onSort, onToggleConference }) {
   const thBase = 'cursor-pointer select-none hover:text-neutral-900 dark:hover:text-neutral-100'
+  const { ref, maxHeight } = useStickyScrollHeight()
 
   const sortedRows = useMemo(() => {
     const byValue = (a, b) => {
@@ -301,17 +340,17 @@ function ShareStatsTable({ rows, sortKey, sortDir, groupByConference, onSort, on
       const result = typeof va === 'string' ? String(va ?? '').localeCompare(String(vb ?? '')) : (va ?? -Infinity) - (vb ?? -Infinity)
       return sortDir === 'asc' ? result : -result
     }
-    if (!groupByConference) return [...rows].sort(byValue)
+    if (!confGroup) return [...rows].sort(byValue)
     return [...rows].sort((a, b) => {
-      const confDiff = CONFERENCE_ORDER[a.conference] - CONFERENCE_ORDER[b.conference]
+      const confDiff = conferenceSortDiff(confGroup, a, b)
       return confDiff !== 0 ? confDiff : byValue(a, b)
     })
-  }, [rows, sortKey, sortDir, groupByConference])
+  }, [rows, sortKey, sortDir, confGroup])
 
-  const topConference = sortedRows[0]?.conference
+  const topConference = confGroup ?? sortedRows[0]?.conference
 
   return (
-    <div className="max-h-[75vh] overflow-auto">
+    <div ref={ref} className="overflow-auto" style={{ maxHeight: maxHeight ?? undefined }}>
       <table className="w-full min-w-[900px] border-collapse text-sm">
         <thead>
           <tr className="border-b border-neutral-200 text-left text-neutral-500 dark:border-neutral-800">
@@ -324,10 +363,10 @@ function ShareStatsTable({ rows, sortKey, sortDir, groupByConference, onSort, on
               <SortIndicator active={sortKey === 'team'} dir={sortDir} />
             </th>
             <th
-              className={`${thBase} sticky z-20 px-2 py-2 text-left font-medium ${groupByConference ? 'text-neutral-900 dark:text-neutral-100' : ''} ${CONFERENCE_HEADER_BG[topConference] ?? 'bg-neutral-50 dark:bg-neutral-900'}`}
+              className={`${thBase} sticky z-20 px-2 py-2 text-left font-medium ${confGroup ? 'text-neutral-900 dark:text-neutral-100' : ''} ${CONFERENCE_HEADER_BG[topConference] ?? 'bg-neutral-50 dark:bg-neutral-900'}`}
               style={{ top: HEADER_STICKY_TOP }}
               onClick={onToggleConference}
-              title="Toggle grouping by conference"
+              title="Cycle grouping: off / AFC on top / NFC on top"
             >
               Conf
             </th>
@@ -374,7 +413,11 @@ export default function TeamStatsTable() {
   const [error, setError] = useState(null)
   const [sortKey, setSortKey] = useState('win_diff')
   const [sortDir, setSortDir] = useState('desc')
-  const [groupByConference, setGroupByConference] = useState(false)
+  const [confGroup, setConfGroup] = useState(null)
+
+  function cycleConfGroup() {
+    setConfGroup((c) => (c === null ? 'AFC' : c === 'AFC' ? 'NFC' : null))
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -454,9 +497,9 @@ export default function TeamStatsTable() {
           rows={shareRows}
           sortKey={sortKey}
           sortDir={sortDir}
-          groupByConference={groupByConference}
+          confGroup={confGroup}
           onSort={handleSort}
-          onToggleConference={() => setGroupByConference((g) => !g)}
+          onToggleConference={cycleConfGroup}
         />
       )}
 
@@ -466,9 +509,9 @@ export default function TeamStatsTable() {
           groups={TABLES[activeTable].groups}
           sortKey={sortKey}
           sortDir={sortDir}
-          groupByConference={groupByConference}
+          confGroup={confGroup}
           onSort={handleSort}
-          onToggleConference={() => setGroupByConference((g) => !g)}
+          onToggleConference={cycleConfGroup}
         />
       )}
     </div>

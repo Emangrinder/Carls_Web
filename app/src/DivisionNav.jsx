@@ -37,10 +37,7 @@ export default function DivisionNav() {
   }, {})
 
   return (
-    <nav
-      className="sticky z-10 w-16 shrink-0 overflow-y-auto border-r border-neutral-200 px-2 py-4 dark:border-neutral-800"
-      style={{ top: 82, height: 'calc(100vh - 82px)' }}
-    >
+    <nav className="hidden w-16 shrink-0 border-r border-neutral-200 px-2 py-4 lg:block dark:border-neutral-800">
       {CONFERENCES.map((conf) => (
         <div
           key={conf}
