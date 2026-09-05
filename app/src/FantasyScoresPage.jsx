@@ -709,6 +709,13 @@ export default function FantasyScoresPage() {
   const isCoaching = topKey === 'coaching'
   const activeSub = isWeeks ? null : subKey ?? topCategory.subs[0].key
 
+  // A column sort only makes sense for the columns actually on screen --
+  // reset it whenever the Table Type changes so a stale column key from a
+  // different tab doesn't silently do nothing.
+  useEffect(() => {
+    setSortKey(null)
+  }, [topKey, activeSub])
+
   function selectTop(key) {
     setTopKey(key)
     const cat = TOP_CATEGORIES.find((c) => c.key === key)
@@ -818,6 +825,21 @@ export default function FantasyScoresPage() {
 
   const visibleRows = filteredRows.slice(0, rowLimit)
 
+  // Re-sorts the already-decided set of rows (rank + position filter +
+  // row limit all stay fixed) by whichever column was clicked -- always
+  // most-to-least, never a toggle to ascending.
+  function sortValueFor(row, key) {
+    if (key === 'total') return row.total
+    if (key === 'avg') return row.avg
+    const raw = isWeeks ? weekScoresByPlayer.get(row.playerId)?.[key] : row.statValues?.[key]
+    return raw == null ? -Infinity : Number(raw)
+  }
+  const displayRows = useMemo(() => {
+    if (!sortKey) return visibleRows
+    return [...visibleRows].sort((a, b) => sortValueFor(b, sortKey) - sortValueFor(a, sortKey))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visibleRows, sortKey, isWeeks, weekScoresByPlayer])
+
   const scrollColumns = isWeeks ? WEEKS.map((w) => ({ key: w, label: `${w}` })) : STAT_COLUMNS[activeSub]
   // Fewer columns means more room per column -- a 3-4 column stat table
   // (e.g. Pressure) can afford enough width for "Assists"/"Pt Diff" to sit
@@ -905,8 +927,8 @@ export default function FantasyScoresPage() {
       {loading ? (
         <LoadingSpinner />
       ) : (
-        <div className="overflow-auto rounded-lg border border-neutral-200 dark:border-neutral-800" style={{ maxHeight: '70vh' }}>
-          <table className="border-collapse text-sm" style={{ tableLayout: 'fixed', width: tableWidth }}>
+        <div className="scrollbar-hide overflow-auto rounded-lg border border-neutral-200 dark:border-neutral-800" style={{ maxHeight: '70vh' }}>
+          <table className="border-collapse text-sm" style={{ tableLayout: 'fixed', width: '100%', minWidth: tableWidth }}>
             <thead>
               <tr className="text-left text-neutral-500">
                 <th className={`${FROZEN_HEADER_TD} border-b border-neutral-200 py-2 font-medium dark:border-neutral-800`} style={{ left: COL_LEFT.logo, width: COL_WIDTHS.logo }} />
@@ -917,30 +939,33 @@ export default function FantasyScoresPage() {
                   Player
                 </th>
                 <th
-                  className={`${FROZEN_HEADER_TD} border-b border-neutral-200 px-2 py-2 text-right font-medium dark:border-neutral-800`}
+                  className={`${FROZEN_HEADER_TD} cursor-pointer border-b border-neutral-200 px-2 py-2 text-right font-medium hover:text-neutral-900 dark:border-neutral-800 dark:hover:text-neutral-100`}
                   style={{ left: COL_LEFT.total, width: COL_WIDTHS.total }}
+                  onClick={() => setSortKey('total')}
                 >
-                  Total
+                  Total{sortKey === 'total' ? ' ▾' : ''}
                 </th>
                 <th
-                  className={`${FROZEN_HEADER_TD} border-b border-neutral-200 px-2 py-2 text-right font-medium dark:border-neutral-800`}
+                  className={`${FROZEN_HEADER_TD} cursor-pointer border-b border-neutral-200 px-2 py-2 text-right font-medium hover:text-neutral-900 dark:border-neutral-800 dark:hover:text-neutral-100`}
                   style={{ left: COL_LEFT.avg, width: COL_WIDTHS.avg, ...DIVIDER_STYLE }}
+                  onClick={() => setSortKey('avg')}
                 >
-                  Avg
+                  Avg{sortKey === 'avg' ? ' ▾' : ''}
                 </th>
                 {scrollColumns.map((col) => (
                   <th
                     key={col.key}
-                    className={`${HEADER_TH} border-b border-l border-neutral-200 px-2 py-2 text-right font-medium dark:border-neutral-800`}
+                    className={`${HEADER_TH} cursor-pointer border-b border-l border-neutral-200 px-2 py-2 text-right font-medium hover:text-neutral-900 dark:border-neutral-800 dark:hover:text-neutral-100`}
                     style={{ width: scrollColWidth }}
+                    onClick={() => setSortKey(col.key)}
                   >
-                    {col.label}
+                    {col.label}{sortKey === col.key ? ' ▾' : ''}
                   </th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {visibleRows.length === 0 && (
+              {displayRows.length === 0 && (
                 <tr>
                   <td colSpan={4 + scrollColumns.length} className="py-6 text-center text-sm text-neutral-400">
                     {rows.length === 0
@@ -949,7 +974,7 @@ export default function FantasyScoresPage() {
                   </td>
                 </tr>
               )}
-              {visibleRows.map((r) => (
+              {displayRows.map((r) => (
                 <tr key={r.key} className="border-b border-neutral-100 dark:border-neutral-900">
                   <td className={`${FROZEN_TD} py-2 pl-2`} style={{ left: COL_LEFT.logo, width: COL_WIDTHS.logo }}>
                     <img

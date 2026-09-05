@@ -20,3 +20,15 @@ body {
 .animate-ribbon {
   animation: ribbon-scroll 40s linear infinite;
 }
+
+/* Keeps scrolling (wheel/trackpad/keyboard/drag) fully working while
+   hiding the visible scrollbar track -- used on the big stat tables
+   (Fantasy Scores, the league table, player pages) where the OS scrollbar
+   otherwise sits awkwardly on top of the last column. */
+.scrollbar-hide {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* old Edge/IE */
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none; /* Chrome/Safari/new Edge */
+}

@@ -211,10 +211,13 @@ function GroupedStatsTable({ rows, groups, sortKey, sortDir, confGroup, onSort, 
     })
   }, [rows, sortKey, sortDir, confGroup, groups])
 
-  const topConference = confGroup ?? sortedRows[0]?.conference
+  // Only tint the header by whichever conference naturally sorts to
+  // the top -- once the user explicitly toggles to NFC/AFC, the header
+  // goes back to neutral instead of matching the selection.
+  const topConference = confGroup ? null : sortedRows[0]?.conference
 
   return (
-    <div ref={ref} className="overflow-auto" style={{ maxHeight: maxHeight ?? undefined }}>
+    <div ref={ref} className="scrollbar-hide overflow-auto" style={{ maxHeight: maxHeight ?? undefined }}>
       <table className="w-full min-w-[950px] border-collapse text-sm">
         <thead>
           <tr className="border-b border-neutral-200 text-left text-neutral-500 dark:border-neutral-800">
@@ -347,10 +350,13 @@ function ShareStatsTable({ rows, sortKey, sortDir, confGroup, onSort, onToggleCo
     })
   }, [rows, sortKey, sortDir, confGroup])
 
-  const topConference = confGroup ?? sortedRows[0]?.conference
+  // Only tint the header by whichever conference naturally sorts to
+  // the top -- once the user explicitly toggles to NFC/AFC, the header
+  // goes back to neutral instead of matching the selection.
+  const topConference = confGroup ? null : sortedRows[0]?.conference
 
   return (
-    <div ref={ref} className="overflow-auto" style={{ maxHeight: maxHeight ?? undefined }}>
+    <div ref={ref} className="scrollbar-hide overflow-auto" style={{ maxHeight: maxHeight ?? undefined }}>
       <table className="w-full min-w-[900px] border-collapse text-sm">
         <thead>
           <tr className="border-b border-neutral-200 text-left text-neutral-500 dark:border-neutral-800">
