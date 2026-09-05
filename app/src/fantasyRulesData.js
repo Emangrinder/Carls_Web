@@ -80,7 +80,7 @@ export const RULE_GROUPS = [
     ],
   },
   {
-    tag: 'Fumbles',
+    tag: 'Fumbles and Fouls',
     rules: [
       { event: 'Fumbles', range: '1-99', points: '-2 points each' },
       { event: 'Fumbles Lost (to Opponent)', range: '1-99', points: '-3 points each' },
