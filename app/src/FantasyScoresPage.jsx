@@ -5,7 +5,8 @@ import LoadingSpinner from './LoadingSpinner'
 const SEASONS = [2026, 2025, 2024]
 const DEFAULT_SEASON = 2025
 const WEEKS = Array.from({ length: 18 }, (_, i) => i + 1)
-const ROW_LIMIT = 50
+const ROW_LIMITS = [50, 100, 250]
+const DEFAULT_ROW_LIMIT = 50
 
 // nflverse's `players.position` uses finer-grained codes than the Fantasy
 // Rules' own position groups -- collapses them onto the same buckets
@@ -27,7 +28,10 @@ const IDP_POSITIONS = new Set(['DT', 'DE', 'LB', 'CB', 'S'])
 
 // A separate filter dimension from the Weeks/Offense/etc toggles above --
 // narrows whichever leaderboard is currently showing down to one position
-// (or the Skill/IDP position-group buckets, or the two team-level roles).
+// (or the Skill/IDP position-group buckets). The three team-level roles
+// (Head Coach/Team D/Team O) don't exist as rows anywhere but the Coaching
+// tab, so picking one also jumps the Table Type toggles there (see
+// selectPositionFilter below) instead of just filtering in place.
 const POSITION_FILTERS = [
   { key: 'all', label: 'All' },
   { key: 'QB', label: 'QB' },
@@ -42,11 +46,13 @@ const POSITION_FILTERS = [
   { key: 'LB', label: 'LB' },
   { key: 'CB', label: 'CB' },
   { key: 'S', label: 'S' },
-  { key: 'TeamD', label: 'Team D' },
-  { key: 'TeamO', label: 'Team O' },
   { key: 'PK', label: 'PK' },
   { key: 'PN', label: 'PN' },
+  { key: 'HC', label: 'Head Coach' },
+  { key: 'TeamD', label: 'Team D' },
+  { key: 'TeamO', label: 'Team O' },
 ]
+const TEAM_ROLE_FILTERS = { HC: 'coach-head', TeamD: 'coach-defense', TeamO: 'coach-offense' }
 function matchesPositionFilter(filterKey, normalizedPos) {
   if (filterKey === 'all') return true
   if (filterKey === 'Skill') return SKILL_POSITIONS.has(normalizedPos)
@@ -268,6 +274,12 @@ const COL_LEFT = {
 const SCROLL_COL_WIDTH = 56
 const FROZEN_WIDTH = COL_LEFT.avg + COL_WIDTHS.avg
 const FROZEN_TD = 'sticky z-10 bg-neutral-50 dark:bg-neutral-900'
+// Header cells need their own sticky-top (row scroll) layer, and the
+// frozen-column header cells need BOTH axes at once -- a higher z-index
+// than either plain sticky-left body cells or plain sticky-top header
+// cells so that corner never shows either scrolling past underneath it.
+const HEADER_TH = 'sticky top-0 z-20 bg-neutral-50 dark:bg-neutral-900'
+const FROZEN_HEADER_TD = 'sticky top-0 z-30 bg-neutral-50 dark:bg-neutral-900'
 const DIVIDER_STYLE = { borderRight: '1px solid rgba(120,120,120,0.25)' }
 
 function ToggleButton({ active, onClick, children, title }) {
@@ -287,11 +299,30 @@ function ToggleButton({ active, onClick, children, title }) {
   )
 }
 
+// One labeled row of toggles -- the label sits in a fixed-width column to
+// its left so the four groups (Year/Table Limit/Table Type/Position) line
+// up with each other regardless of how many buttons wrap onto a second line.
+function ToggleGroupRow({ label, align = 'center', children }) {
+  return (
+    <div className={`mb-4 flex flex-wrap gap-2 ${align === 'start' ? 'items-start' : 'items-center'}`}>
+      <span
+        className={`w-24 shrink-0 text-xs font-semibold uppercase tracking-wide text-neutral-500 ${
+          align === 'start' ? 'pt-1.5' : ''
+        }`}
+      >
+        {label}
+      </span>
+      <div className="flex flex-1 flex-wrap gap-1.5">{children}</div>
+    </div>
+  )
+}
+
 export default function FantasyScoresPage() {
   const [season, setSeason] = useState(DEFAULT_SEASON)
   const [topKey, setTopKey] = useState('weeks')
   const [subKey, setSubKey] = useState(null)
   const [positionFilter, setPositionFilter] = useState('all')
+  const [rowLimit, setRowLimit] = useState(DEFAULT_ROW_LIMIT)
   const [players, setPlayers] = useState([])
   const [teams, setTeams] = useState([])
   const [fantasyPoints, setFantasyPoints] = useState([])
@@ -484,12 +515,27 @@ export default function FantasyScoresPage() {
     setSubKey(cat.subs ? cat.subs[0].key : null)
   }
 
+  // Head Coach/Team D/Team O don't exist as rows anywhere but the Coaching
+  // tab -- picking one also jumps the Table Type toggles there, the same
+  // way clicking a sub-toggle would, so the leaderboard underneath is
+  // never just empty because the wrong tab happened to be showing.
+  function selectPositionFilter(key) {
+    setPositionFilter(key)
+    if (TEAM_ROLE_FILTERS[key]) {
+      setTopKey('coaching')
+      setSubKey(TEAM_ROLE_FILTERS[key])
+    }
+  }
+
+  // Full sorted leaderboard for the current Table Type -- NOT yet cut down
+  // to the row limit, so the Position filter below can narrow within the
+  // whole list instead of within whatever happened to already be in the
+  // (much smaller) top slice.
   const rows = useMemo(() => {
     if (isWeeks) {
       return fantasyPoints
         .slice()
         .sort((a, b) => Number(b.total_points) - Number(a.total_points))
-        .slice(0, ROW_LIMIT)
         .map((fp) => {
           const player = playersById.get(fp.player_id)
           return {
@@ -511,7 +557,6 @@ export default function FantasyScoresPage() {
         .filter((r) => r[col] != null)
         .slice()
         .sort((a, b) => Number(b[col]) - Number(a[col]))
-        .slice(0, ROW_LIMIT)
         .map((r) => ({
           key: r.team,
           name: teamsByAbbr.get(r.team)?.team_name ?? r.team,
@@ -529,7 +574,6 @@ export default function FantasyScoresPage() {
       .filter((r) => r[col] != null && Number(r[col]) !== 0)
       .slice()
       .sort((a, b) => Number(b[col]) - Number(a[col]))
-      .slice(0, ROW_LIMIT)
       .map((fp) => {
         const player = playersById.get(fp.player_id)
         const team = teamOf(fp.player_id) ?? '???'
@@ -550,16 +594,22 @@ export default function FantasyScoresPage() {
     offenseByPlayer, defenseByPlayer, specialByPlayer, teamSeasonByAbbr, firstDownsByTeam,
   ])
 
-  // A second filter dimension on top of whichever leaderboard is showing --
-  // "Team D"/"Team O" only match the Coaching tab's own team rows, and any
-  // specific player position has no matches among team rows.
+  // A second filter dimension on top of whichever leaderboard is showing.
+  // Team-role filters are kept in sync with Table Type by selectPositionFilter
+  // above, so by the time positionFilter is e.g. 'TeamD', activeSub is
+  // already 'coach-defense' and `rows` is already the right team list --
+  // this just has to let it through (a stale mismatch could only happen if
+  // the Table Type sub-toggle were clicked directly afterward).
   const filteredRows = useMemo(() => {
     if (positionFilter === 'all') return rows
-    if (positionFilter === 'TeamD') return isCoaching && activeSub === 'coach-defense' ? rows : []
-    if (positionFilter === 'TeamO') return isCoaching && activeSub === 'coach-offense' ? rows : []
+    if (TEAM_ROLE_FILTERS[positionFilter]) {
+      return isCoaching && activeSub === TEAM_ROLE_FILTERS[positionFilter] ? rows : []
+    }
     if (isCoaching) return []
     return rows.filter((r) => matchesPositionFilter(positionFilter, positionGroup(r.position)))
   }, [rows, positionFilter, isCoaching, activeSub])
+
+  const visibleRows = filteredRows.slice(0, rowLimit)
 
   const scrollColumns = isWeeks ? WEEKS.map((w) => ({ key: w, label: `Wk ${w}` })) : STAT_COLUMNS[activeSub]
   // table-layout:fixed alone doesn't stop a <table> shrinking below the
@@ -586,7 +636,7 @@ export default function FantasyScoresPage() {
         for the exact list.
       </p>
 
-      <div className="mb-4 flex gap-2">
+      <ToggleGroupRow label="Year">
         {SEASONS.map((y) => (
           <button
             key={y}
@@ -601,54 +651,67 @@ export default function FantasyScoresPage() {
             {y}
           </button>
         ))}
-      </div>
+      </ToggleGroupRow>
 
-      <div className="mb-1.5 flex flex-wrap gap-1.5">
-        {TOP_CATEGORIES.map((c) => (
-          <ToggleButton key={c.key} active={topKey === c.key} onClick={() => selectTop(c.key)}>
-            {c.label}
+      <ToggleGroupRow label="Table Limit">
+        {ROW_LIMITS.map((n) => (
+          <ToggleButton key={n} active={rowLimit === n} onClick={() => setRowLimit(n)}>
+            {n}
           </ToggleButton>
         ))}
-      </div>
+      </ToggleGroupRow>
 
-      {!isWeeks && (
-        <div className="mb-4 flex flex-wrap gap-1.5">
-          {topCategory.subs.map((s) => (
-            <ToggleButton key={s.key} active={activeSub === s.key} onClick={() => setSubKey(s.key)} title={s.note}>
-              {s.label}
-            </ToggleButton>
-          ))}
+      <ToggleGroupRow label="Table Type" align="start">
+        <div className="flex flex-col gap-1.5">
+          <div className="flex flex-wrap gap-1.5">
+            {TOP_CATEGORIES.map((c) => (
+              <ToggleButton key={c.key} active={topKey === c.key} onClick={() => selectTop(c.key)}>
+                {c.label}
+              </ToggleButton>
+            ))}
+          </div>
+          {!isWeeks && (
+            <div className="flex flex-wrap gap-1.5">
+              {topCategory.subs.map((s) => (
+                <ToggleButton key={s.key} active={activeSub === s.key} onClick={() => setSubKey(s.key)} title={s.note}>
+                  {s.label}
+                </ToggleButton>
+              ))}
+            </div>
+          )}
         </div>
-      )}
-      {isWeeks && <div className="mb-1.5" />}
+      </ToggleGroupRow>
 
-      <div className="mb-4 flex flex-wrap gap-1.5">
+      <ToggleGroupRow label="Position">
         {POSITION_FILTERS.map((p) => (
-          <ToggleButton key={p.key} active={positionFilter === p.key} onClick={() => setPositionFilter(p.key)}>
+          <ToggleButton key={p.key} active={positionFilter === p.key} onClick={() => selectPositionFilter(p.key)}>
             {p.label}
           </ToggleButton>
         ))}
-      </div>
+      </ToggleGroupRow>
 
       {loading ? (
         <LoadingSpinner />
       ) : (
-        <div className="overflow-x-auto">
+        <div className="overflow-auto rounded-lg border border-neutral-200 dark:border-neutral-800" style={{ maxHeight: '70vh' }}>
           <table className="border-collapse text-sm" style={{ tableLayout: 'fixed', width: tableWidth }}>
             <thead>
-              <tr className="border-b border-neutral-200 text-left text-neutral-500 dark:border-neutral-800">
-                <th className={`${FROZEN_TD} py-2 font-medium`} style={{ left: COL_LEFT.logo, width: COL_WIDTHS.logo }} />
-                <th className={`${FROZEN_TD} py-2 pr-2 font-medium`} style={{ left: COL_LEFT.name, width: COL_WIDTHS.name }}>
+              <tr className="text-left text-neutral-500">
+                <th className={`${FROZEN_HEADER_TD} border-b border-neutral-200 py-2 font-medium dark:border-neutral-800`} style={{ left: COL_LEFT.logo, width: COL_WIDTHS.logo }} />
+                <th
+                  className={`${FROZEN_HEADER_TD} border-b border-neutral-200 py-2 pr-2 font-medium dark:border-neutral-800`}
+                  style={{ left: COL_LEFT.name, width: COL_WIDTHS.name }}
+                >
                   Player
                 </th>
                 <th
-                  className={`${FROZEN_TD} px-2 py-2 text-right font-medium`}
+                  className={`${FROZEN_HEADER_TD} border-b border-neutral-200 px-2 py-2 text-right font-medium dark:border-neutral-800`}
                   style={{ left: COL_LEFT.total, width: COL_WIDTHS.total }}
                 >
                   Total
                 </th>
                 <th
-                  className={`${FROZEN_TD} px-2 py-2 text-right font-medium`}
+                  className={`${FROZEN_HEADER_TD} border-b border-neutral-200 px-2 py-2 text-right font-medium dark:border-neutral-800`}
                   style={{ left: COL_LEFT.avg, width: COL_WIDTHS.avg, ...DIVIDER_STYLE }}
                 >
                   Avg
@@ -656,7 +719,7 @@ export default function FantasyScoresPage() {
                 {scrollColumns.map((col) => (
                   <th
                     key={col.key}
-                    className="border-l border-neutral-200 px-2 py-2 text-right font-medium dark:border-neutral-800"
+                    className={`${HEADER_TH} border-b border-l border-neutral-200 px-2 py-2 text-right font-medium dark:border-neutral-800`}
                     style={{ width: SCROLL_COL_WIDTH }}
                   >
                     {col.label}
@@ -665,7 +728,7 @@ export default function FantasyScoresPage() {
               </tr>
             </thead>
             <tbody>
-              {filteredRows.length === 0 && (
+              {visibleRows.length === 0 && (
                 <tr>
                   <td colSpan={4 + scrollColumns.length} className="py-6 text-center text-sm text-neutral-400">
                     {rows.length === 0
@@ -674,7 +737,7 @@ export default function FantasyScoresPage() {
                   </td>
                 </tr>
               )}
-              {filteredRows.map((r) => (
+              {visibleRows.map((r) => (
                 <tr key={r.key} className="border-b border-neutral-100 dark:border-neutral-900">
                   <td className={`${FROZEN_TD} py-2`} style={{ left: COL_LEFT.logo, width: COL_WIDTHS.logo }}>
                     <img
