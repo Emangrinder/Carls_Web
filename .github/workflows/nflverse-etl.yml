@@ -52,15 +52,20 @@ jobs:
           done
 
       - name: Build fantasy scores for each retained season
-        # Applies the Fantasy Rules formulas on top of the box scores just
-        # built above. Safe to run every night regardless of where the
-        # season is -- an unplayed/future week just yields 0 rows, same as
+        # build_td_bonuses.py reads nflverse's play-by-play release (much
+        # larger than the per-game aggregate files above) to compute
+        # touchdown-length/blocked-kick bonuses the aggregates can't -- it
+        # must run before build_fantasy_scores.py so that script can fold
+        # its output in. All three scripts are safe to run every night
+        # regardless of where the season is -- an unplayed/future week (or
+        # a not-yet-published pbp file) just yields 0 rows, same as
         # build_db.py's own per-season stat files, so scores populate
         # automatically as each week's games are played, with no manual
         # step needed when a new season starts.
         run: |
           set -e
           for season in $SEASONS; do
+            python3 etl/data/nflverse/build_td_bonuses.py --season "$season"
             python3 etl/data/nflverse/build_fantasy_scores.py --season "$season"
             python3 etl/data/nflverse/build_coach_fantasy_scores.py --season "$season"
           done

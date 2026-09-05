@@ -1,31 +1,30 @@
 #!/usr/bin/env python3
 """Computes per-game fantasy points for every player, applying the Fantasy
-Rules scoring formulas universally -- whoever actually recorded a stat
-gets its points, not just the position the rule group was nominally drawn
-up around (a TE who threw a pass scores under `passing` same as a QB).
-Source formulas: app/src/fantasyRulesData.js.
+Rules scoring formulas -- each position-restricted group (see
+POSITION_GROUP/*_POSITIONS below) scores for whoever actually recorded the
+underlying stat, not necessarily the position the group is named after
+(e.g. a gadget-play rushing TD by a WR still scores under Rushing/
+Receiving, which is a QB/RB/FB/WR/TE group). Source formulas:
+app/src/fantasyRulesData.js.
 
 Run against an already-built season DB (etl/db/nfl_<season>.db), since it
 reads player_offense_stats / player_defense_stats /
-player_special_teams_stats, which build_db.py populates.
+player_special_teams_stats, which build_db.py populates. Run
+build_td_bonuses.py first (same DB) so its play-by-play-derived
+touchdown-length and blocked-kick bonuses get folded in below -- without
+that table, this script still runs fine, those categories just stay at
+whatever the aggregate-table formulas alone produce.
 
 KNOWN LIMITATIONS -- data we don't have, so these specific sub-bonuses are
 left out rather than guessed:
-  - Touchdown LENGTH tiers (passing/rushing/receiving/defensive/return TDs
-    all have per-length bonus tiers) -- nflverse's per-game aggregates
-    only have TD *counts*, not individual play yardage.
-  - Interception- or fumble-lost-returned-for-a-TD, credited against the
-    passer/fumbler -- needs cross-player play-level attribution the
-    aggregates don't carry.
-  - Blocked field goals/punts/extra points credited to the individual
-    defender who made the block -- not a column in our defense stats.
-  - Return-TD length tiers, same reason as touchdown length above.
   - Coach / Offensive Coordinator (ST) / Defensive Coordinator (DEF) --
-    these are team- and coach-level, not per-player, and need a
-    different join (team_game_stats, and a coach-to-team mapping we
-    don't track results for) -- a separate follow-up, not attempted here.
-Every OTHER rule in the Passing/Rushing/Receiving/Blocking Bonus/Fumbles
-and Fouls/Defense/Kicking/Punting/Returning groups is computed in full.
+    these are team- and coach-level, not per-player; see
+    build_coach_fantasy_scores.py instead.
+Touchdown length tiers, interception/fumble-lost-return-TD attribution,
+and individual blocked-kick credit -- all previously listed here as gaps
+-- are now computed from play-by-play data by build_td_bonuses.py. Every
+other rule in the Passing/Rushing/Receiving/Blocking Bonus/Fumbles and
+Fouls/Defense/Kicking/Punting/Returning groups is computed in full.
 """
 import argparse
 import sqlite3
@@ -364,6 +363,39 @@ def build_fantasy_scores(season: int):
         if positions.get(r["player_id"]) in RETURNING_POSITIONS:
             row["returning"] += compute_returning(r)
         n_st += 1
+
+    # Fold in touchdown-length/blocked-kick bonuses from build_td_bonuses.py
+    # (run before this script) -- absent if that hasn't been run yet for
+    # this season, in which case these categories simply stay at whatever
+    # the aggregate-table formulas above already gave them. Most recipients
+    # already have a row from one of the three loops above, but a player
+    # whose ONLY stat all game was one of these bonuses (e.g. a backup who
+    # did nothing but block a punt) wouldn't -- passing along the bonus
+    # table's own `team` (from play-by-play posteam/defteam) covers that
+    # get_row(...) call too.
+    has_td_bonus_table = (
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='player_game_td_bonus'").fetchone()
+        is not None
+    )
+    if has_td_bonus_table:
+        n_bonus = 0
+        for r in cur.execute("SELECT * FROM player_game_td_bonus"):
+            pid = r["player_id"]
+            pos = positions.get(pid)
+            row = get_row(pid, r["game_id"], r["team"])
+            if pos in PASSING_POSITIONS:
+                row["passing"] += r["passing_bonus"]
+            if pos in RUSHING_RECEIVING_POSITIONS:
+                row["rushing"] += r["rushing_bonus"]
+                row["receiving"] += r["receiving_bonus"]
+            if pos in DEFENSE_IDP_POSITIONS:
+                row["turnover"] += r["turnover_bonus"]
+            if pos in FUMBLES_FOULS_POSITIONS:
+                row["fumbles_fouls"] += r["fumbles_fouls_bonus"]
+            if pos in RETURNING_POSITIONS:
+                row["returning"] += r["returning_bonus"]
+            n_bonus += 1
+        print(f"  folded in {n_bonus} touchdown-length/blocked-kick bonus rows")
 
     for row in rows_by_key.values():
         defense = row["pressure"] + row["coverage"] + row["turnover"]

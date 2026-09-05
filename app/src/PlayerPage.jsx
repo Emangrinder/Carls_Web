@@ -463,12 +463,10 @@ const RETURNS_COLUMNS = [
 ]
 
 // Applied points from player_season_fantasy_points -- computed per the
-// Fantasy Rules formulas (app/src/fantasyRulesData.js) universally, so
-// every category column can be non-zero regardless of this player's own
-// primary position (Blocking Bonus is the one exception -- TE/FB only).
-// See etl/data/nflverse/build_fantasy_scores.py for exactly which
-// sub-bonuses aren't computable from our per-game aggregates (mainly
-// TD-length tiers) and are therefore left out.
+// Fantasy Rules formulas (app/src/fantasyRulesData.js), each within its
+// own eligible-position group (see fantasyRulesData.js's group subtitles).
+// Includes touchdown-length bonuses and individual blocked-kick credit
+// from nflverse's play-by-play data (build_td_bonuses.py).
 //
 // Split into the same groups Fantasy Scores toggles by (Defense broken
 // into Pressure/Coverage/Turnover) rather than one lumped Defense number.
@@ -1110,8 +1108,9 @@ export default function PlayerPage() {
               <Link to="/rules" className="underline">
                 Fantasy Rules
               </Link>{' '}
-              formulas, universally -- any category can be non-zero here regardless of this player's
-              own primary position.
+              formulas -- includes touchdown-length and blocked-kick bonuses from play-by-play data, so a
+              category can be non-zero here even if it's not this player's primary position (e.g. a gadget-play
+              rushing touchdown for a WR).
             </p>
             <SeasonStatTable title="By Season" rows={fantasyRows} columns={visibleFantasyColumns} />
           </>

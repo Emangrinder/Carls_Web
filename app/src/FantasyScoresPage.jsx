@@ -576,13 +576,10 @@ export default function FantasyScoresPage() {
         <a href="#/rules" className="underline">
           Fantasy Rules
         </a>{' '}
-        scoring formulas. Refreshed automatically every night as new games are played -- a few sub-bonuses
-        aren't computable from the available per-game stat aggregates (touchdown-length tiers, some
-        cross-player attribution, individual blocked-kick credit, and two Defensive Coordinator items); see{' '}
-        <code className="rounded bg-neutral-100 px-1 py-0.5 text-xs dark:bg-neutral-800">
-          build_fantasy_scores.py
-        </code>{' '}
-        and{' '}
+        scoring formulas, including touchdown-length bonuses and individual blocked-kick credit from
+        nflverse's play-by-play data. Refreshed automatically every night as new games are played -- two
+        Defensive Coordinator items (opponent penalty first downs, opponent fourth-downs-failed) still
+        aren't computable from the available data; see{' '}
         <code className="rounded bg-neutral-100 px-1 py-0.5 text-xs dark:bg-neutral-800">
           build_coach_fantasy_scores.py
         </code>{' '}
