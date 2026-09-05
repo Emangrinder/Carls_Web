@@ -3,16 +3,13 @@
 // than a Supabase table -- these are league-defined settings, not NFL
 // stats pulled from nflverse, and change rarely if ever.
 //
-// Every group here is "universal": the events it lists can be scored for
-// ANY roster player who records them (a TE who throws a TD pass still
-// earns the Passing group's points), NOT the specific position the group
-// used to be drawn up around. The three EXCEPTIONS are Head Coach,
-// Offensive Coordinator (ST), and Defensive Coordinator (DEF): those are
-// tied to their own dedicated roster slots and never apply to anyone else.
-//
-// Numbers transcribed from a screenshot of a dense table -- double-check
-// the exact figures against the league's own rules page before treating
-// this as authoritative.
+// Each group's rules apply to whichever roster player actually recorded
+// the event -- NOT necessarily the specific position the group used to be
+// drawn up around -- but each group has its OWN eligible-position list
+// (see each group's `subtitle`), not a single universal list. Head Coach,
+// Offensive Coordinator (ST), and Defensive Coordinator (DEF) are the
+// exceptions that apply to a dedicated roster slot only, never to a
+// player directly (see `independent` below).
 
 export const RULE_GROUPS = [
   {
@@ -50,6 +47,7 @@ export const RULE_GROUPS = [
   },
   {
     tag: 'Rushing/Receiving',
+    subtitle: 'Applies to QB, RB, FB, WR, TE.',
     rules: [
       { event: 'Number of Rushing TDs', range: '1-10', points: '2 points each' },
       { event: 'Length of Rushing TD', range: '0-9', points: '1' },
@@ -81,6 +79,7 @@ export const RULE_GROUPS = [
   },
   {
     tag: 'Fumbles and Fouls',
+    subtitle: 'Applies to QB, RB, FB, WR, TE, PK, PN, DT, DE, LB, CB, S.',
     rules: [
       { event: 'Fumbles', range: '1-99', points: '-2 points each' },
       { event: 'Fumbles Lost (to Opponent)', range: '1-99', points: '-3 points each' },
@@ -93,12 +92,13 @@ export const RULE_GROUPS = [
   },
   {
     tag: 'Returning',
+    subtitle: 'Applies to RB, FB, WR, TE, CB, S, LB.',
     rules: [
       { event: 'Length of Punt Return TD', range: '0-39', points: '6' },
       { event: 'Length of Punt Return TD', range: '40-59', points: '8' },
       { event: 'Length of Punt Return TD', range: '60-79', points: '10' },
       { event: 'Length of Punt Return TD', range: '80-98', points: '12' },
-      { event: 'Length of Punt Return TD', range: '99-100', points: '15' },
+      { event: 'Length of Punt Return TD', range: '99-110', points: '15' },
       { event: 'Punt Return Yards', range: '-50-999', points: '0.2 points each' },
       { event: 'Length of Kickoff Return TD', range: '0-49', points: '8' },
       { event: 'Length of Kickoff Return TD', range: '50-69', points: '10' },
@@ -109,6 +109,7 @@ export const RULE_GROUPS = [
   },
   {
     tag: 'Blocking Bonus',
+    subtitle: 'Applies to FB, TE.',
     rules: [
       { event: 'Average Yards per Pass Completion', range: '-99-100', points: '0.1 points each' },
       { event: 'Average Yards per Rush', range: '-99-100', points: '1 point each' },
@@ -158,13 +159,14 @@ export const RULE_GROUPS = [
   },
   {
     tag: 'Defense',
+    subtitle: 'Applies to DT, DE, LB, CB, S.',
     rules: [
       { event: 'Fumble Recoveries (from Opponent)', range: '1-99', points: '3 points each' },
       { event: 'Opponent Fumble Recovery Yards', range: '-50-999', points: '0.3 points each' },
       { event: 'Forced Fumbles', range: '1-99', points: '3 points each' },
       { event: 'Interceptions Caught', range: '1-10', points: '5 points each' },
       { event: 'Interception Return Yards', range: '-50-999', points: '0.3 points each' },
-      { event: 'Passes Deflected', range: '1-99', points: '4 points each' },
+      { event: 'Passes Defended', range: '1-99', points: '4 points each' },
       { event: 'Blocked Field Goals', range: '1-10', points: '4 points each' },
       { event: 'Blocked Punts', range: '1-10', points: '4 points each' },
       { event: 'Blocked Extra Points', range: '1-10', points: '4 points each' },
@@ -172,10 +174,11 @@ export const RULE_GROUPS = [
       { event: 'Assists', range: '0-99', points: '0.6 points each' },
       { event: 'Sacked a QB', range: '0-25', points: '2 points each' },
       { event: 'Sacked a QB Yardage', range: '0-100', points: '0.3 points each' },
-      { event: 'Tackles for a Loss', range: '1-10', points: '3 points each' },
+      { event: 'Quarterback Hits', range: '1-10', points: '2 points each' },
+      { event: 'Tackles for a Loss', range: '0-25', points: '3 points each' },
       { event: 'Safeties', range: '0-10', points: '2 points each' },
       { event: 'Number of Defensive TDs', range: '1-10', points: '5 points each' },
-      { event: 'Length of Defensive TD', range: '0-110', points: '0.32 points each' },
+      { event: 'Length of Defensive TD', range: '0-110', points: '0.02 points each' },
       { event: 'Safeties for 1 Point', range: '1-10', points: '10 points each' },
     ],
   },
@@ -192,8 +195,9 @@ export const RULE_GROUPS = [
       { event: 'Number of Field Goals Made', range: '1-99', points: '0.5 points each' },
       { event: 'Fumbles Lost on Offense', range: '1-99', points: '-1.5 points each' },
       { event: 'Opponent Interceptions Caught', range: '1-99', points: '-1.5 points each' },
-      { event: 'Opponent Number of Defensive TDs', range: '1-99', points: '-0.5 points each' },
-      { event: 'Offensive Points Only', range: '0-6', points: '-3' },
+      { event: 'Opponent Quarterback Hits', range: '1-99', points: '-0.5 points each' },
+      { event: 'Opponent Number of Defensive TDs', range: '1-99', points: '-4.5 points each' },
+      { event: 'Offensive Points Only', range: '0-0', points: '-5' },
       { event: 'First Downs', range: '1-99', points: '0.1 points each' },
     ],
   },
@@ -205,23 +209,23 @@ export const RULE_GROUPS = [
       { event: 'Opponent Number of Passing TDs', range: '1-99', points: '-1 point each' },
       { event: 'Opponent Pass Incompletions', range: '1-99', points: '0.2 points each' },
       { event: 'Opponent Number of Rushing TDs', range: '1-99', points: '-1 point each' },
-      { event: 'Opponent Punts', range: '1-99', points: '1.5 points each' },
+      { event: 'Opponent Punts', range: '1-99', points: '0.5 points each' },
       { event: 'Fumble Recoveries on Defense', range: '1-10', points: '3 points each' },
       { event: 'Interceptions Caught', range: '1-10', points: '3 points each' },
       { event: 'Blocked Field Goals', range: '1-10', points: '4 points each' },
       { event: 'Blocked Punts', range: '1-10', points: '4 points each' },
       { event: 'Blocked Extra Points', range: '1-10', points: '2 points each' },
-      { event: 'Sacked a QB', range: '1-25', points: '2 points each' },
-      { event: 'Quarterback Hits', range: '1-99', points: '0.3 points each' },
+      { event: 'Sacked a QB', range: '1-25', points: '1.5 points each' },
+      { event: 'Quarterback Hits', range: '1-10', points: '0.5 points each' },
       { event: 'Safeties', range: '1-10', points: '5 points each' },
-      { event: 'Offensive Points Against', range: '0-9', points: '5' },
-      { event: 'Passing Yards Allowed', range: '0-99', points: '5' },
-      { event: 'Passing Yards Allowed', range: '100-999', points: '0.01 points each' },
-      { event: 'Rushing Yards Allowed', range: '0-99', points: '5' },
+      { event: 'Offensive Points Against', range: '0-0', points: '5' },
+      { event: 'Passing Yards Allowed', range: '-99-0', points: '5' },
+      { event: 'Passing Yards Allowed', range: '1-999', points: '-0.01 points each' },
+      { event: 'Rushing Yards Allowed', range: '-99-0', points: '5' },
       { event: 'Rushing Yards Allowed', range: '1-999', points: '-0.02 points each' },
       { event: 'Number of Defensive TDs', range: '1-10', points: '6 points each' },
-      { event: 'Opponent Penalty First Downs', range: '1-99', points: '-1 point each' },
-      { event: 'Opponent Fourth Downs Failed', range: '1-99', points: '1 point each' },
+      { event: 'Opponent Penalty First Downs', range: '1-99', points: '-0.5 points each' },
+      { event: 'Opponent Fourth Downs Failed', range: '1-99', points: '1.5 points each' },
     ],
   },
 ]

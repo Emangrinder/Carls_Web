@@ -33,22 +33,22 @@ def to_num(v):
 
 
 def yards_allowed_tier(yards, per_yard_points):
-    """Shared shape for Passing/Rushing Yards Allowed: a flat +5 bonus for
-    holding an opponent under 100 yards, else a per-yard rate beyond that
-    (positive for passing, negative for rushing, per the rules table)."""
-    if yards < 100:
+    """Shared shape for Passing/Rushing Yards Allowed: a flat +5 shutout
+    bonus for holding an opponent to 0 yards, else a per-yard penalty rate
+    beyond that (both negative, per the rules table)."""
+    if yards <= 0:
         return 5
     return yards * per_yard_points
 
 
 def points_only_tier(points_for):
-    """Offensive Points Only: a flat -3 penalty for scoring 0-6 points."""
-    return -3 if 0 <= points_for <= 6 else 0
+    """Offensive Points Only: a flat -5 penalty for being shut out."""
+    return -5 if points_for == 0 else 0
 
 
 def points_against_tier(points_against):
-    """Offensive Points Against: a flat +5 bonus for allowing 0-9 points."""
-    return 5 if 0 <= points_against <= 9 else 0
+    """Offensive Points Against: a flat +5 bonus for a shutout."""
+    return 5 if points_against == 0 else 0
 
 
 def compute_head_coach(points_for, points_against):
@@ -73,7 +73,8 @@ def compute_offensive_coordinator(own, opp):
         + own["fg_made"] * 0.5
         + own["fumbles_lost"] * -1.5
         + own["ints_thrown"] * -1.5
-        + opp["def_tds"] * -0.5
+        + opp["qb_hits"] * -0.5
+        + opp["def_tds"] * -4.5
         + points_only_tier(own["points_for"])
         + own["first_downs"] * 0.1
     )
@@ -85,17 +86,17 @@ def compute_defensive_coordinator(own, opp):
         opp["pass_td"] * -1
         + opp_incompletions * 0.2
         + opp["rush_td"] * -1
-        + opp["punts"] * 1.5
+        + opp["punts"] * 0.5
         + own["fumble_recovery_opp"] * 3
         + own["def_ints"] * 3
         + opp["fg_blocked"] * 4
         + opp["pt_blocked"] * 4
         + opp["pat_blocked"] * 2
-        + own["sacks"] * 2
-        + own["qb_hits"] * 0.3
+        + own["sacks"] * 1.5
+        + own["qb_hits"] * 0.5
         + own["def_safeties"] * 5
         + points_against_tier(own["points_against"])
-        + yards_allowed_tier(opp["pass_yds"], 0.01)
+        + yards_allowed_tier(opp["pass_yds"], -0.01)
         + yards_allowed_tier(opp["rush_yds"], -0.02)
         + own["def_tds"] * 6
     )

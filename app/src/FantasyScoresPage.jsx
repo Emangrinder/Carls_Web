@@ -7,6 +7,53 @@ const DEFAULT_SEASON = 2025
 const WEEKS = Array.from({ length: 18 }, (_, i) => i + 1)
 const ROW_LIMIT = 50
 
+// nflverse's `players.position` uses finer-grained codes than the Fantasy
+// Rules' own position groups -- collapses them onto the same buckets
+// etl/data/nflverse/build_fantasy_scores.py uses (keep both in sync).
+const POSITION_GROUP = {
+  QB: 'QB', RB: 'RB', FB: 'FB', WR: 'WR', TE: 'TE',
+  K: 'PK', P: 'PN',
+  DT: 'DT', NT: 'DT', DL: 'DT',
+  DE: 'DE',
+  LB: 'LB', ILB: 'LB', MLB: 'LB', OLB: 'LB',
+  CB: 'CB', DB: 'CB',
+  S: 'S', FS: 'S', SAF: 'S',
+}
+function positionGroup(rawPosition) {
+  return POSITION_GROUP[rawPosition] ?? null
+}
+const SKILL_POSITIONS = new Set(['RB', 'FB', 'TE', 'WR'])
+const IDP_POSITIONS = new Set(['DT', 'DE', 'LB', 'CB', 'S'])
+
+// A separate filter dimension from the Weeks/Offense/etc toggles above --
+// narrows whichever leaderboard is currently showing down to one position
+// (or the Skill/IDP position-group buckets, or the two team-level roles).
+const POSITION_FILTERS = [
+  { key: 'all', label: 'All' },
+  { key: 'QB', label: 'QB' },
+  { key: 'Skill', label: 'Skill' },
+  { key: 'RB', label: 'RB' },
+  { key: 'FB', label: 'FB' },
+  { key: 'TE', label: 'TE' },
+  { key: 'WR', label: 'WR' },
+  { key: 'IDP', label: 'IDP' },
+  { key: 'DT', label: 'DT' },
+  { key: 'DE', label: 'DE' },
+  { key: 'LB', label: 'LB' },
+  { key: 'CB', label: 'CB' },
+  { key: 'S', label: 'S' },
+  { key: 'TeamD', label: 'Team D' },
+  { key: 'TeamO', label: 'Team O' },
+  { key: 'PK', label: 'PK' },
+  { key: 'PN', label: 'PN' },
+]
+function matchesPositionFilter(filterKey, normalizedPos) {
+  if (filterKey === 'all') return true
+  if (filterKey === 'Skill') return SKILL_POSITIONS.has(normalizedPos)
+  if (filterKey === 'IDP') return IDP_POSITIONS.has(normalizedPos)
+  return normalizedPos === filterKey
+}
+
 // Two-level toggle: pick a top-level group, then (for anything but Weeks)
 // which of its rule-sets to view. Each leaf's key maps to a real fantasy-
 // points column (POINTS_COLUMN/TEAM_POINTS_COLUMN below) and to a raw-stat
@@ -244,6 +291,7 @@ export default function FantasyScoresPage() {
   const [season, setSeason] = useState(DEFAULT_SEASON)
   const [topKey, setTopKey] = useState('weeks')
   const [subKey, setSubKey] = useState(null)
+  const [positionFilter, setPositionFilter] = useState('all')
   const [players, setPlayers] = useState([])
   const [teams, setTeams] = useState([])
   const [fantasyPoints, setFantasyPoints] = useState([])
@@ -502,6 +550,17 @@ export default function FantasyScoresPage() {
     offenseByPlayer, defenseByPlayer, specialByPlayer, teamSeasonByAbbr, firstDownsByTeam,
   ])
 
+  // A second filter dimension on top of whichever leaderboard is showing --
+  // "Team D"/"Team O" only match the Coaching tab's own team rows, and any
+  // specific player position has no matches among team rows.
+  const filteredRows = useMemo(() => {
+    if (positionFilter === 'all') return rows
+    if (positionFilter === 'TeamD') return isCoaching && activeSub === 'coach-defense' ? rows : []
+    if (positionFilter === 'TeamO') return isCoaching && activeSub === 'coach-offense' ? rows : []
+    if (isCoaching) return []
+    return rows.filter((r) => matchesPositionFilter(positionFilter, positionGroup(r.position)))
+  }, [rows, positionFilter, isCoaching, activeSub])
+
   const scrollColumns = isWeeks ? WEEKS.map((w) => ({ key: w, label: `Wk ${w}` })) : STAT_COLUMNS[activeSub]
   // table-layout:fixed alone doesn't stop a <table> shrinking below the
   // sum of its declared column widths to fit its container -- an explicit
@@ -564,7 +623,15 @@ export default function FantasyScoresPage() {
           ))}
         </div>
       )}
-      {isWeeks && <div className="mb-4" />}
+      {isWeeks && <div className="mb-1.5" />}
+
+      <div className="mb-4 flex flex-wrap gap-1.5">
+        {POSITION_FILTERS.map((p) => (
+          <ToggleButton key={p.key} active={positionFilter === p.key} onClick={() => setPositionFilter(p.key)}>
+            {p.label}
+          </ToggleButton>
+        ))}
+      </div>
 
       {loading ? (
         <LoadingSpinner />
@@ -601,14 +668,16 @@ export default function FantasyScoresPage() {
               </tr>
             </thead>
             <tbody>
-              {rows.length === 0 && (
+              {filteredRows.length === 0 && (
                 <tr>
                   <td colSpan={4 + scrollColumns.length} className="py-6 text-center text-sm text-neutral-400">
-                    No fantasy data yet for {season} -- check back once games are played.
+                    {rows.length === 0
+                      ? `No fantasy data yet for ${season} -- check back once games are played.`
+                      : 'No players match this position filter here.'}
                   </td>
                 </tr>
               )}
-              {rows.map((r) => (
+              {filteredRows.map((r) => (
                 <tr key={r.key} className="border-b border-neutral-100 dark:border-neutral-900">
                   <td className={`${FROZEN_TD} py-2`} style={{ left: COL_LEFT.logo, width: COL_WIDTHS.logo }}>
                     <img

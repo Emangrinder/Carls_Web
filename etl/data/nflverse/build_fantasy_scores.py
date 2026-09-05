@@ -191,6 +191,7 @@ def compute_pressure(r):
         to_num(r["def_sacks"]) * 2
         + to_num(r["def_sack_yards"]) * 0.3
         + to_num(r["def_tackles_for_loss"]) * 3
+        + to_num(r["def_qb_hits"]) * 2
     )
 
 
@@ -241,11 +242,41 @@ def compute_returning(r):
     return to_num(r["kickoff_return_yards"]) * 0.1 + to_num(r["punt_return_yards"]) * 0.2
 
 
-# Blocking Bonus (avg yards/completion, avg yards/rush, rush attempts, avg
-# yards/reception) is a lineman-adjacent bonus meant for the two positions
-# that actually spring these plays as run/pass blockers -- everyone else's
-# raw per-play averages aren't a "blocking" signal at all.
+# nflverse's `players.position` uses finer-grained codes than the Fantasy
+# Rules' own position groups (e.g. ILB/MLB/OLB are all "LB" for scoring
+# purposes) -- this collapses them onto the same buckets fantasyRulesData.js
+# and FantasyScoresPage.jsx's position filter use. Anything not listed here
+# (OL/OT/G/C/LS) isn't eligible for any of the position-restricted groups
+# below, which matches reality -- those positions never appear in the
+# offense/defense/special-teams stat tables anyway.
+POSITION_GROUP = {
+    "QB": "QB", "RB": "RB", "FB": "FB", "WR": "WR", "TE": "TE",
+    "K": "PK", "P": "PN",
+    "DT": "DT", "NT": "DT", "DL": "DT",
+    "DE": "DE",
+    "LB": "LB", "ILB": "LB", "MLB": "LB", "OLB": "LB",
+    "CB": "CB", "DB": "CB",
+    "S": "S", "FS": "S", "SAF": "S",
+}
+
+
+def position_group(raw_position):
+    return POSITION_GROUP.get(raw_position)
+
+
+# Position restrictions transcribed from the league's rules table (each
+# group's header names exactly which positions it scores for) -- anyone
+# else's stats in that source table are left uncounted for that group.
 BLOCKING_BONUS_POSITIONS = {"TE", "FB"}
+# The rules table gives Passing its own "QB Event" header, separate from
+# Rushing/Receiving's "QB, RB, FB, WR, TE Event" header -- so a gadget-play
+# completion by a non-QB doesn't score Passing points, even though the same
+# player's carries/receptions elsewhere in the same game still would.
+PASSING_POSITIONS = {"QB"}
+RUSHING_RECEIVING_POSITIONS = {"QB", "RB", "FB", "WR", "TE"}
+FUMBLES_FOULS_POSITIONS = {"QB", "RB", "FB", "WR", "TE", "PK", "PN", "DT", "DE", "LB", "CB", "S"}
+RETURNING_POSITIONS = {"RB", "FB", "WR", "TE", "CB", "S", "LB"}
+DEFENSE_IDP_POSITIONS = {"DT", "DE", "LB", "CB", "S"}
 
 
 def build_fantasy_scores(season: int):
@@ -257,7 +288,10 @@ def build_fantasy_scores(season: int):
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
 
-    positions = {r["player_id"]: r["position"] for r in cur.execute("SELECT player_id, position FROM players")}
+    positions = {
+        r["player_id"]: position_group(r["position"])
+        for r in cur.execute("SELECT player_id, position FROM players")
+    }
 
     cur.execute("DROP TABLE IF EXISTS player_game_fantasy_points")
     cur.execute(
@@ -302,27 +336,33 @@ def build_fantasy_scores(season: int):
     n_off = n_def = n_st = 0
     for r in cur.execute("SELECT * FROM player_offense_stats"):
         row = get_row(r["player_id"], r["game_id"], r["team"])
-        row["passing"] += compute_passing(r)
-        row["rushing"] += compute_rushing(r)
-        row["receiving"] += compute_receiving(r)
-        if positions.get(r["player_id"]) in BLOCKING_BONUS_POSITIONS:
+        pos = positions.get(r["player_id"])
+        if pos in PASSING_POSITIONS:
+            row["passing"] += compute_passing(r)
+        if pos in RUSHING_RECEIVING_POSITIONS:
+            row["rushing"] += compute_rushing(r)
+            row["receiving"] += compute_receiving(r)
+        if pos in BLOCKING_BONUS_POSITIONS:
             row["blocking_bonus"] += compute_blocking_bonus(r)
-        row["fumbles_fouls"] += compute_offense_fumbles(r)
+        if pos in FUMBLES_FOULS_POSITIONS:
+            row["fumbles_fouls"] += compute_offense_fumbles(r)
         n_off += 1
 
     for r in cur.execute("SELECT * FROM player_defense_stats"):
         row = get_row(r["player_id"], r["game_id"], r["team"])
-        row["pressure"] += compute_pressure(r)
-        row["coverage"] += compute_coverage(r)
-        row["turnover"] += compute_turnover(r)
-        row["fumbles_fouls"] += compute_defense_fumbles(r)
+        if positions.get(r["player_id"]) in DEFENSE_IDP_POSITIONS:
+            row["pressure"] += compute_pressure(r)
+            row["coverage"] += compute_coverage(r)
+            row["turnover"] += compute_turnover(r)
+            row["fumbles_fouls"] += compute_defense_fumbles(r)
         n_def += 1
 
     for r in cur.execute("SELECT * FROM player_special_teams_stats"):
         row = get_row(r["player_id"], r["game_id"], r["team"])
         row["kicking"] += compute_kicking(r)
         row["punting"] += compute_punting(r)
-        row["returning"] += compute_returning(r)
+        if positions.get(r["player_id"]) in RETURNING_POSITIONS:
+            row["returning"] += compute_returning(r)
         n_st += 1
 
     for row in rows_by_key.values():
