@@ -67,16 +67,16 @@ function RuleGroupTable({ group }) {
 
 function LineupRow({ cells }) {
   return (
-    <div className="grid grid-cols-2 border-b border-neutral-100 last:border-0 dark:border-neutral-900">
+    <div className="grid grid-cols-2 border-b border-neutral-200 last:border-0 dark:border-neutral-800">
       {cells.map((c, i) => (
         <div
           key={c.label}
-          className={`flex justify-between gap-2 px-3 py-2 ${
-            cells.length === 1 ? 'col-span-2' : i === 0 ? 'border-r border-neutral-100 dark:border-neutral-900' : ''
+          className={`flex items-center justify-between gap-2 divide-x divide-neutral-200 px-3 py-2 dark:divide-neutral-800 ${
+            cells.length === 1 ? 'col-span-2' : i === 0 ? 'border-r border-neutral-200 dark:border-neutral-800' : ''
           }`}
         >
           <span className="text-neutral-700 dark:text-neutral-300">{c.label}</span>
-          <span className="font-medium text-neutral-900 dark:text-neutral-100">{c.count}</span>
+          {c.value && <span className="pl-3 font-medium text-neutral-900 dark:text-neutral-100">{c.value}</span>}
         </div>
       ))}
     </div>

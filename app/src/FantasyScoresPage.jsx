@@ -303,7 +303,11 @@ export default function FantasyScoresPage() {
                 Avg
               </th>
               {scrollColumns.map((col) => (
-                <th key={col.key} className="px-2 py-2 text-right font-medium" style={{ width: SCROLL_COL_WIDTH }}>
+                <th
+                  key={col.key}
+                  className="border-l border-neutral-200 px-2 py-2 text-right font-medium dark:border-neutral-800"
+                  style={{ width: SCROLL_COL_WIDTH }}
+                >
                   {col.label}
                 </th>
               ))}
@@ -351,12 +355,18 @@ export default function FantasyScoresPage() {
                   </td>
                   {isWeeks
                     ? weekScores.map((s, wi) => (
-                        <td key={wi} className="px-2 py-2 text-right tabular-nums text-neutral-600 dark:text-neutral-400">
+                        <td
+                          key={wi}
+                          className="border-l border-neutral-100 px-2 py-2 text-right tabular-nums text-neutral-600 dark:border-neutral-900 dark:text-neutral-400"
+                        >
                           {s}
                         </td>
                       ))
                     : scrollColumns.map((col, ci) => (
-                        <td key={col.key} className="px-2 py-2 text-right tabular-nums text-neutral-600 dark:text-neutral-400">
+                        <td
+                          key={col.key}
+                          className="border-l border-neutral-100 px-2 py-2 text-right tabular-nums text-neutral-600 dark:border-neutral-900 dark:text-neutral-400"
+                        >
                           {mockStatValue(i + 1, ci)}
                         </td>
                       ))}

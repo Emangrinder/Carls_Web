@@ -235,12 +235,12 @@ export const INDEPENDENT_TAGS = RULE_GROUPS.filter((g) => g.independent).map((g)
 // Legal starting lineup composition -- the top three rows are two single-
 // count slots side by side, the rest are one full-width row each.
 export const STARTING_LINEUP_ROWS = [
-  [{ label: 'Head Coach (HC)', count: 1 }, { label: 'Quarterback (QB)', count: 1 }],
-  [{ label: 'Defense (Def)', count: 1 }, { label: 'Offense (ST)', count: 1 }],
-  [{ label: 'Kicker (PK)', count: 1 }, { label: 'Punter (PN)', count: 1 }],
-  [{ label: 'IDP/Skill', count: 10 }],
-  [{ label: 'Reserve', count: 5 }],
-  [{ label: 'IR', count: 2 }],
+  [{ label: 'Head Coach (HC)' }, { label: 'Quarterback (QB)' }],
+  [{ label: 'Defense (Def)' }, { label: 'Offense (ST)' }],
+  [{ label: 'Kicker (PK)' }, { label: 'Punter (PN)' }],
+  [{ label: 'IDP/Skill', value: '0-10' }],
+  [{ label: 'Reserve', value: '5' }],
+  [{ label: 'IR', value: '2' }],
 ]
 
 // Roster (not just starting-lineup) position count limits.

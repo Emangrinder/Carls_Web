@@ -13,19 +13,27 @@ function Logo({ team, className = '' }) {
 }
 
 // A single control cycling between the app's top-level pages instead of
-// showing them all as separate links -- click an arrow, it moves to the
-// next/previous page in the list (wrapping at the ends).
+// showing them all as separate links -- click an arrow (or the faded
+// preview row itself), it moves to the next/previous page (wrapping at
+// the ends), with a peek at the adjacent option above/below like a
+// rotating dial.
 const NAV_PAGES = [
+  { path: '/', label: 'NFL Teams' },
   { path: '/rules', label: 'Fantasy Rules' },
-  { path: '/matches', label: 'Matches' },
+  { path: '/matches', label: 'NFL Matches' },
   { path: '/scores', label: 'Fantasy Scores' },
 ]
 
 function PageSpinner() {
   const location = useLocation()
   const navigate = useNavigate()
-  const activeIndex = NAV_PAGES.findIndex((p) => location.pathname.startsWith(p.path))
+  const activeIndex = NAV_PAGES.findIndex((p) =>
+    p.path === '/' ? location.pathname === '/' : location.pathname.startsWith(p.path),
+  )
   const index = activeIndex === -1 ? 0 : activeIndex
+
+  const prevPage = NAV_PAGES[(index - 1 + NAV_PAGES.length) % NAV_PAGES.length]
+  const nextPage = NAV_PAGES[(index + 1) % NAV_PAGES.length]
 
   function go(delta) {
     const next = (index + delta + NAV_PAGES.length) % NAV_PAGES.length
@@ -33,18 +41,19 @@ function PageSpinner() {
   }
 
   return (
-    <div className="flex shrink-0 flex-col items-center border-r border-neutral-200 pr-4 leading-none dark:border-neutral-800">
+    <div className="flex w-32 shrink-0 flex-col items-center border-r border-neutral-200 pr-4 leading-none dark:border-neutral-800">
       <button
         type="button"
         onClick={() => go(-1)}
         aria-label="Previous page"
-        className="text-[10px] text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100"
+        className="flex items-center gap-1 truncate pb-0.5 text-[10px] text-neutral-300 transition-colors hover:text-neutral-600 dark:text-neutral-700 dark:hover:text-neutral-400"
       >
-        ▲
+        <span>▲</span>
+        <span className="truncate">{prevPage.label}</span>
       </button>
       <Link
         to={NAV_PAGES[index].path}
-        className="w-28 text-center text-sm font-medium text-neutral-600 hover:text-neutral-900 dark:text-neutral-300 dark:hover:text-neutral-100"
+        className="py-0.5 text-center text-sm font-medium text-neutral-600 transition-colors hover:text-neutral-900 dark:text-neutral-300 dark:hover:text-neutral-100"
       >
         {NAV_PAGES[index].label}
       </Link>
@@ -52,9 +61,10 @@ function PageSpinner() {
         type="button"
         onClick={() => go(1)}
         aria-label="Next page"
-        className="text-[10px] text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100"
+        className="flex items-center gap-1 truncate pt-0.5 text-[10px] text-neutral-300 transition-colors hover:text-neutral-600 dark:text-neutral-700 dark:hover:text-neutral-400"
       >
-        ▼
+        <span className="truncate">{nextPage.label}</span>
+        <span>▼</span>
       </button>
     </div>
   )
