@@ -277,9 +277,12 @@ const POINTS_COLUMN = {
   'all-defense': 'defense_points',
 }
 function offensePoints(fp) {
-  return (
+  // Summing already-rounded floats can reintroduce binary floating-point
+  // drift (0.1 + 0.2 = 0.30000000000000004) -- round the sum itself, not
+  // just what gets displayed downstream.
+  return round2(
     Number(fp.passing_points ?? 0) + Number(fp.rushing_points ?? 0)
-    + Number(fp.receiving_points ?? 0) + Number(fp.blocking_bonus_points ?? 0)
+    + Number(fp.receiving_points ?? 0) + Number(fp.blocking_bonus_points ?? 0),
   )
 }
 const TEAM_POINTS_COLUMN = {
@@ -414,6 +417,10 @@ export default function FantasyScoresPage() {
   const [subKey, setSubKey] = useState(null)
   const [positionFilter, setPositionFilter] = useState('all')
   const [rowLimit, setRowLimit] = useState(DEFAULT_ROW_LIMIT)
+  // Which column the currently-shown rows are re-sorted by -- null means
+  // the default (Total, i.e. however `rows` was already ranked). Only ever
+  // sorts most-to-least; there's no ascending mode.
+  const [sortKey, setSortKey] = useState(null)
   const [players, setPlayers] = useState([])
   const [teams, setTeams] = useState([])
   const [fantasyPoints, setFantasyPoints] = useState([])
