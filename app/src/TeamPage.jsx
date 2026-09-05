@@ -4,7 +4,25 @@ import { supabase } from './supabaseClient'
 import { TEAM_COLORS } from './constants'
 import LoadingSpinner from './LoadingSpinner'
 
+// PostgREST caps a single response at 1000 rows -- fine for anything
+// filtered to one team/player, but the leaguewide rank pools need every
+// row, so page through with .range() until a page comes back short.
+async function fetchAllRows(queryFactory) {
+  const pageSize = 1000
+  let allData = []
+  let from = 0
+  for (;;) {
+    const { data, error } = await queryFactory().range(from, from + pageSize - 1)
+    if (error) return { data: null, error }
+    allData = allData.concat(data)
+    if (data.length < pageSize) break
+    from += pageSize
+  }
+  return { data: allData, error: null }
+}
+
 const SEASONS = [2026, 2025, 2024]
+const CURRENT_SEASON = SEASONS[0]
 const DEFAULT_SEASON = 2025
 // The depth-chart hover card's stats always look back at the most recent
 // *completed* season, independent of the season-toggle above the schedule
@@ -154,6 +172,30 @@ function fmtStat(n, digits = 0) {
   return n == null || Number.isNaN(n) ? '—' : n.toFixed(digits)
 }
 
+// Standard NFL passer rating (0-158.3 scale) from season completions/
+// attempts/yards/TDs/INTs. Not ESPN's proprietary Total QBR -- that needs
+// play-by-play win-probability context nflverse's box-score data doesn't
+// carry, so this is the closest real "QBR"-style number computable here.
+function passerRating(off) {
+  if (!off || !off.attempts) return null
+  const clamp = (n) => Math.min(Math.max(n, 0), 2.375)
+  const a = clamp((off.completions / off.attempts - 0.3) * 5)
+  const b = clamp((off.passing_yards / off.attempts - 3) * 0.25)
+  const c = clamp((off.passing_tds / off.attempts) * 20)
+  const d = clamp(2.375 - (off.passing_interceptions / off.attempts) * 25)
+  return ((a + b + c + d) / 6) * 100
+}
+
+// Leaguewide rank (1 = best) among every other player in the same pool,
+// e.g. every DL's Pressure number this season. Ties share the rank of the
+// first player at that value.
+function rankOf(pool, playerId) {
+  if (!pool || !pool.has(playerId)) return null
+  const value = pool.get(playerId)
+  const values = [...pool.values()].sort((a, b) => b - a)
+  return { rank: values.indexOf(value) + 1, total: values.length }
+}
+
 // The depth chart hover card's two position-specific stats, per the exact
 // formulas requested: prior-season pass yards/game for QBs, team carry/
 // target share for RB/WR/TE, snap-share-vs-the-current-team's-prior-year
@@ -161,7 +203,7 @@ function fmtStat(n, digits = 0) {
 // this team's total, not their old team's), pressure/tackle/coverage
 // tallies for the front seven and secondary, and simple counting stats
 // for specialists.
-function computeStatLines(p, popupData) {
+function computeStatLines(p, popupData, rankPools) {
   const { offenseByPlayer, defenseByPlayer, stByPlayer, snapByPlayer, shareByPlayer, teamPriorOffenseSnaps } = popupData
   const off = offenseByPlayer.get(p.player_id)
   const def = defenseByPlayer.get(p.player_id)
@@ -169,35 +211,44 @@ function computeStatLines(p, popupData) {
   const snaps = snapByPlayer.get(p.player_id)
   const share = shareByPlayer.get(p.player_id)
   const category = categoryOf(p)
+  const rank = (pool) => (rankPools ? rankOf(pool, p.player_id) : null)
 
   switch (category) {
     case 'qb': {
-      const avg = off && off.games ? off.passing_yards / off.games : null
-      return [{ label: `${STATS_SEASON} Pass Yds/G`, value: fmtStat(avg, 1) }]
+      return [{ label: `${STATS_SEASON} QBR`, value: fmtStat(passerRating(off), 1), rank: rank(rankPools?.qbr) }]
     }
     case 'ol': {
       const own = snaps?.offense_snaps ?? 0
       return [{
         label: `${STATS_SEASON} Snap Share`,
         value: teamPriorOffenseSnaps ? `${own}/${teamPriorOffenseSnaps}` : '—',
+        rank: rank(rankPools?.olShare),
       }]
     }
     case 'skill': {
       if (p.position_abbr === 'RB') {
-        return [{ label: 'Team Carry %', value: share?.team_rb_carry_pct != null ? `${share.team_rb_carry_pct}%` : '—' }]
+        return [{
+          label: 'Team Carry %',
+          value: share?.team_rb_carry_pct != null ? `${share.team_rb_carry_pct}%` : '—',
+          rank: rank(rankPools?.rbCarry),
+        }]
       }
       if (p.position_abbr === 'WR' || p.position_abbr === 'TE') {
-        return [{ label: 'Team Target %', value: share?.team_target_pct != null ? `${share.team_target_pct}%` : '—' }]
+        return [{
+          label: 'Team Target %',
+          value: share?.team_target_pct != null ? `${share.team_target_pct}%` : '—',
+          rank: rank(rankPools?.wrTeTarget),
+        }]
       }
       return []
     }
     case 'dl': {
       const val = def ? (def.def_sacks ?? 0) + (def.def_qb_hits ?? 0) + (def.def_tackles_for_loss ?? 0) : null
-      return [{ label: 'Pressure', value: fmtStat(val, 1) }]
+      return [{ label: 'Pressure', value: fmtStat(val, 1), rank: rank(rankPools?.pressure) }]
     }
     case 'lb': {
       const val = def ? (def.def_tackles_solo ?? 0) + (def.def_tackles_with_assist ?? 0) : null
-      return [{ label: 'Tackles', value: fmtStat(val) }]
+      return [{ label: 'Tackles', value: fmtStat(val), rank: rank(rankPools?.tackles) }]
     }
     case 'cb':
     case 's': {
@@ -209,16 +260,22 @@ function computeStatLines(p, popupData) {
         ? 2 * (def.def_pass_defended ?? 0) + (def.def_interceptions ?? 0) +
           0.5 * ((def.def_tackles_solo ?? 0) + (def.def_tackles_with_assist ?? 0))
         : null
-      return [{ label: 'Coverage', value: fmtStat(val, 1) }]
+      return [{ label: 'Coverage', value: fmtStat(val, 1), rank: rank(rankPools?.coverage) }]
     }
     case 'st': {
-      if (p.position_abbr === 'PK') return [{ label: `${STATS_SEASON} FGs Made`, value: fmtStat(st?.fg_made) }]
+      if (p.position_abbr === 'PK') {
+        return [{ label: `${STATS_SEASON} FGs Made`, value: fmtStat(st?.fg_made), rank: rank(rankPools?.fgMade) }]
+      }
       if (p.position_abbr === 'P') {
         const avg = st && st.pt_att ? st.pt_yards / st.pt_att : null
-        return [{ label: 'Avg Punt Yds', value: fmtStat(avg, 1) }]
+        return [{ label: 'Avg Punt Yds', value: fmtStat(avg, 1), rank: rank(rankPools?.puntAvg) }]
       }
-      if (p.position_abbr === 'KR') return [{ label: 'Kick Returns', value: fmtStat(st?.kickoff_returns) }]
-      if (p.position_abbr === 'PR') return [{ label: 'Punt Returns', value: fmtStat(st?.punt_returns) }]
+      if (p.position_abbr === 'KR') {
+        return [{ label: 'Kick Returns', value: fmtStat(st?.kickoff_returns), rank: rank(rankPools?.kickReturns) }]
+      }
+      if (p.position_abbr === 'PR') {
+        return [{ label: 'Punt Returns', value: fmtStat(st?.punt_returns), rank: rank(rankPools?.puntReturns) }]
+      }
       return []
     }
     default:
@@ -252,20 +309,32 @@ function lastNameOnly(fullName) {
   return rest || fullName
 }
 
+// "R" for a player in their debut season, otherwise years since their
+// rookie season (e.g. "7y") -- relative to CURRENT_SEASON, not whichever
+// stats-reference season the hover card uses, since this is about the
+// player's career right now, not last season's box scores.
+function fmtExperience(rookieSeason) {
+  if (rookieSeason == null) return null
+  if (rookieSeason >= CURRENT_SEASON) return 'R'
+  return `${CURRENT_SEASON - rookieSeason}y`
+}
+
 // Hovering ANY player (starter or bench) reports itself up to TeamPage via
 // onChipHover, which positions two fixed side panels -- see
 // HoverSidePanels below. Nothing is rendered here for the hover itself:
 // that's the point, hovering never touches this component's own layout.
-function PlayerChip({ p, injuryStatus, onChipHover, onChipUnhover, onHoverInjured, onUnhoverInjured }) {
+function PlayerChip({ p, injuryStatus, popupData, onChipHover, onChipUnhover, onHoverInjured, onUnhoverInjured }) {
   const style = INJURY_STATUS_STYLES[injuryStatus]
   const className = `block shrink-0 whitespace-nowrap rounded border px-2 py-1 text-center text-xs hover:opacity-75 ${
     style ? style.chip : 'border-neutral-200 dark:border-neutral-800'
   }`
+  const experience = fmtExperience(popupData?.rookieSeasonByPlayer.get(p.player_id))
   const inner = (
     <>
       <div className="text-[10px] text-neutral-500">
         {p.position_abbr}
         {p.rank > 1 ? p.rank : ''}
+        {experience ? ` ${experience}` : ''}
       </div>
       <div className="font-medium text-neutral-900 dark:text-neutral-100">
         {lastNameOnly(p.player_name)}
@@ -301,8 +370,9 @@ function PlayerChip({ p, injuryStatus, onChipHover, onChipUnhover, onHoverInjure
 
 // Same hover-reporting behavior as PlayerChip, just for the bottom
 // bench-list row's plain-text visual instead of a bordered chip.
-function DepthListItem({ p, injuryStatus, isNextUp, onChipHover, onChipUnhover, onHoverInjured, onUnhoverInjured }) {
+function DepthListItem({ p, injuryStatus, isNextUp, popupData, onChipHover, onChipUnhover, onHoverInjured, onUnhoverInjured }) {
   const injuryStyle = INJURY_STATUS_STYLES[injuryStatus]
+  const experience = fmtExperience(popupData?.rookieSeasonByPlayer.get(p.player_id))
   const handleEnter = (e) => {
     onChipHover(p, e.currentTarget)
     if (injuryStatus) onHoverInjured?.(p)
@@ -321,6 +391,7 @@ function DepthListItem({ p, injuryStatus, isNextUp, onChipHover, onChipUnhover, 
     >
       <span className="text-neutral-500">
         {p.position_abbr} #{p.rank}
+        {experience ? ` · ${experience}` : ''}
       </span>
       {p.player_id || p.player_name ? (
         <Link
@@ -346,21 +417,21 @@ function DepthListItem({ p, injuryStatus, isNextUp, onChipHover, onChipUnhover, 
 // overlap each other. Never part of normal document flow -- hovering can't
 // shift or resize the page -- and it unmounts the instant the pointer
 // leaves, no fade, no scroll-to.
-const STATS_PANEL_WIDTH = 176
+const STATS_PANEL_WIDTH = 210
 const NEXTUP_PANEL_WIDTH = 144
 
 function clampedLeft(centerX, width) {
   return Math.min(Math.max(8, centerX - width / 2), window.innerWidth - width - 8)
 }
 
-function HoverSidePanels({ hoverInfo, popupData, findNextUp }) {
+function HoverSidePanels({ hoverInfo, popupData, rankPools, findNextUp }) {
   if (!hoverInfo) return null
   const { player: p, rect } = hoverInfo
   const centerX = rect.left + rect.width / 2
   const number = popupData?.numberByPlayer.get(p.player_id)
   const snapCount = popupData ? snapCountFor(p, popupData) : null
   const snapTeams = popupData?.snapTeamsByPlayer.get(p.player_id) ?? []
-  const statLines = popupData ? computeStatLines(p, popupData) : []
+  const statLines = popupData ? computeStatLines(p, popupData, rankPools) : []
   const hasStats = popupData && (number != null || snapCount != null || statLines.length > 0)
   const nextUp = findNextUp(p)
 
@@ -391,8 +462,11 @@ function HoverSidePanels({ hoverInfo, popupData, findNextUp }) {
             ))}
           </div>
           {statLines.map((l) => (
-            <div key={l.label} className="text-neutral-500">
-              {l.label}: <span className="text-neutral-700 dark:text-neutral-300">{l.value}</span>
+            <div key={l.label} className="flex justify-between gap-2 text-neutral-500">
+              <span>
+                {l.label}: <span className="text-neutral-700 dark:text-neutral-300">{l.value}</span>
+              </span>
+              {l.rank && <span className="shrink-0 text-neutral-400">#{l.rank.rank}/{l.rank.total}</span>}
             </div>
           ))}
         </div>
@@ -424,6 +498,7 @@ function InjuryLegend() {
 }
 
 const STAT_LEGEND_ENTRIES = [
+  { label: 'QBR', explanation: 'Standard NFL passer rating (0-158.3), not ESPN\'s Total QBR' },
   { label: 'Pressure', explanation: 'Sacks + QB Hits + TFL' },
   { label: 'Coverage', explanation: '2×Pass Defended + INT + ½×Tackles' },
 ]
@@ -437,6 +512,15 @@ function StatLegend() {
           <span className="text-neutral-400">{label}:</span> {explanation}
         </span>
       ))}
+    </div>
+  )
+}
+
+function ExperienceLegend() {
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-4 text-xs text-neutral-500">
+      <span className="font-medium text-neutral-400">Experience:</span>
+      <span>e.g. "7y" is 7 years since a player's rookie season; "R" is a rookie ({CURRENT_SEASON})</span>
     </div>
   )
 }
@@ -507,7 +591,7 @@ function CoachingStaff({ coaches }) {
 // one shared label -- e.g. Skill splits true starters from the WR2/WR3/RB2
 // rotational depth so 7 chips aren't crammed into a single row. Plain
 // `players` is shorthand for a single-row group.
-function StarterRow({ label, players, rows, injuryByPlayerId, onChipHover, onChipUnhover, onHoverInjured, onUnhoverInjured }) {
+function StarterRow({ label, players, rows, injuryByPlayerId, popupData, onChipHover, onChipUnhover, onHoverInjured, onUnhoverInjured }) {
   const chipRows = rows ?? [players]
   if (chipRows.every((row) => row.length === 0)) return null
   return (
@@ -521,6 +605,7 @@ function StarterRow({ label, players, rows, injuryByPlayerId, onChipHover, onChi
                 key={`${p.position_name}-${p.position_slot}-${p.rank}`}
                 p={p}
                 injuryStatus={injuryByPlayerId.get(p.player_id)}
+                popupData={popupData}
                 onChipHover={onChipHover}
                 onChipUnhover={onChipUnhover}
                 onHoverInjured={onHoverInjured}
@@ -548,6 +633,7 @@ export default function TeamPage() {
   const [error, setError] = useState(null)
   const [popupData, setPopupData] = useState(null)
   const [hoverInfo, setHoverInfo] = useState(null)
+  const [rankPools, setRankPools] = useState(null)
 
   function handleChipHover(p, el) {
     setHoverInfo({ player: p, rect: el.getBoundingClientRect() })
@@ -555,6 +641,101 @@ export default function TeamPage() {
   function handleChipUnhover() {
     setHoverInfo(null)
   }
+
+  // Leaguewide rank pools for the hover stats -- fixed to STATS_SEASON and
+  // independent of which team/season tab is showing, so this fetches once
+  // for the whole session rather than per team page visit. Split into two
+  // small batches (not one big Promise.all) for the same connection-pool
+  // reason as PlayerPage's fetch.
+  useEffect(() => {
+    let cancelled = false
+    Promise.all([
+      fetchAllRows(() => supabase.from('players').select('player_id, position')),
+      fetchAllRows(() => supabase.from('player_season_offense_stats').select('*').eq('season', STATS_SEASON)),
+      fetchAllRows(() => supabase.from('player_season_defense_stats').select('*').eq('season', STATS_SEASON)),
+    ])
+      .then(([playersRes, offenseRes, defenseRes]) => {
+        if (cancelled) return Promise.reject({ handled: true })
+        if (playersRes.error || offenseRes.error || defenseRes.error) throw playersRes.error || offenseRes.error || defenseRes.error
+        return Promise.all([
+          fetchAllRows(() => supabase.from('player_season_special_teams_stats').select('*').eq('season', STATS_SEASON)),
+          fetchAllRows(() => supabase.from('player_season_snap_counts').select('*').eq('season', STATS_SEASON)),
+          fetchAllRows(() => supabase.from('player_season_share_stats').select('*').eq('season', STATS_SEASON)),
+          fetchAllRows(() => supabase.from('team_game_stats').select('team, offense_snaps').eq('season', STATS_SEASON)),
+        ]).then(([stRes, snapRes, shareRes, teamGamesRes]) => [playersRes, offenseRes, defenseRes, stRes, snapRes, shareRes, teamGamesRes])
+      })
+      .then(([playersRes, offenseRes, defenseRes, stRes, snapRes, shareRes, teamGamesRes]) => {
+        if (cancelled) return
+        const err = stRes.error || snapRes.error || shareRes.error || teamGamesRes.error
+        if (err) throw err
+
+        const positionByPlayer = new Map(playersRes.data.map((r) => [r.player_id, r.position]))
+        const teamOffenseSnaps = new Map()
+        for (const g of teamGamesRes.data) {
+          teamOffenseSnaps.set(g.team, (teamOffenseSnaps.get(g.team) ?? 0) + (g.offense_snaps ?? 0))
+        }
+
+        // One number per player per category, built the same way as the
+        // hover card's own display value -- see computeStatLines.
+        const qbr = new Map()
+        const olShare = new Map()
+        const pressure = new Map()
+        const tackles = new Map()
+        const coverage = new Map()
+        for (const off of offenseRes.data) {
+          if (positionByPlayer.get(off.player_id) === 'QB' && off.attempts) {
+            qbr.set(off.player_id, passerRating(off))
+          }
+        }
+        for (const def of defenseRes.data) {
+          const pos = positionByPlayer.get(def.player_id)
+          if (['DE', 'DT', 'NT', 'DL'].includes(pos)) {
+            pressure.set(def.player_id, (def.def_sacks ?? 0) + (def.def_qb_hits ?? 0) + (def.def_tackles_for_loss ?? 0))
+          } else if (['LB', 'OLB', 'ILB', 'MLB'].includes(pos)) {
+            tackles.set(def.player_id, (def.def_tackles_solo ?? 0) + (def.def_tackles_with_assist ?? 0))
+          } else if (['CB', 'DB', 'FS', 'S', 'SS', 'SAF'].includes(pos)) {
+            coverage.set(
+              def.player_id,
+              2 * (def.def_pass_defended ?? 0) + (def.def_interceptions ?? 0) +
+                0.5 * ((def.def_tackles_solo ?? 0) + (def.def_tackles_with_assist ?? 0)),
+            )
+          }
+        }
+        for (const row of snapRes.data) {
+          if (!['OT', 'T', 'OL', 'G', 'C'].includes(positionByPlayer.get(row.player_id))) continue
+          const teamTotal = teamOffenseSnaps.get(row.team)
+          if (!teamTotal) continue
+          const share = (row.offense_snaps ?? 0) / teamTotal
+          olShare.set(row.player_id, (olShare.get(row.player_id) ?? 0) + share)
+        }
+        const rbCarry = new Map()
+        const wrTeTarget = new Map()
+        for (const row of shareRes.data) {
+          const pos = positionByPlayer.get(row.player_id)
+          if (pos === 'RB' && row.team_rb_carry_pct != null) rbCarry.set(row.player_id, row.team_rb_carry_pct)
+          if ((pos === 'WR' || pos === 'TE') && row.team_target_pct != null) wrTeTarget.set(row.player_id, row.team_target_pct)
+        }
+        const fgMade = new Map()
+        const puntAvg = new Map()
+        const kickReturns = new Map()
+        const puntReturns = new Map()
+        for (const row of stRes.data) {
+          const pos = positionByPlayer.get(row.player_id)
+          if (pos === 'K' && row.fg_made != null) fgMade.set(row.player_id, row.fg_made)
+          if (pos === 'P' && row.pt_att) puntAvg.set(row.player_id, row.pt_yards / row.pt_att)
+          if ((row.kickoff_returns ?? 0) > 0) kickReturns.set(row.player_id, row.kickoff_returns)
+          if ((row.punt_returns ?? 0) > 0) puntReturns.set(row.player_id, row.punt_returns)
+        }
+
+        setRankPools({ qbr, olShare, rbCarry, wrTeTarget, pressure, tackles, coverage, fgMade, puntAvg, kickReturns, puntReturns })
+      })
+      .catch((err) => {
+        if (cancelled || err?.handled) return
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -608,7 +789,7 @@ export default function TeamPage() {
     let cancelled = false
 
     Promise.all([
-      supabase.from('players').select('player_id, jersey_number').in('player_id', playerIds),
+      supabase.from('players').select('player_id, jersey_number, rookie_season').in('player_id', playerIds),
       supabase.from('player_season_offense_stats').select('*').in('player_id', playerIds).eq('season', STATS_SEASON),
       supabase.from('player_season_defense_stats').select('*').in('player_id', playerIds).eq('season', STATS_SEASON),
       supabase.from('player_season_special_teams_stats').select('*').in('player_id', playerIds).eq('season', STATS_SEASON),
@@ -621,7 +802,10 @@ export default function TeamPage() {
         return
       }
       const numberByPlayer = new Map(playersRes.data.map((r) => [r.player_id, r.jersey_number]))
-      const offenseByPlayer = aggregateRowsByPlayer(offenseRes.data, ['games', 'passing_yards'])
+      const rookieSeasonByPlayer = new Map(playersRes.data.map((r) => [r.player_id, r.rookie_season]))
+      const offenseByPlayer = aggregateRowsByPlayer(offenseRes.data, [
+        'games', 'passing_yards', 'completions', 'attempts', 'passing_tds', 'passing_interceptions',
+      ])
       const defenseByPlayer = aggregateRowsByPlayer(defenseRes.data, [
         'def_sacks', 'def_qb_hits', 'def_tackles_for_loss', 'def_tackles_solo',
         'def_tackles_with_assist', 'def_pass_defended', 'def_interceptions',
@@ -642,8 +826,8 @@ export default function TeamPage() {
       const shareByPlayer = new Map(shareRes.data.map((r) => [r.player_id, r]))
       const teamPriorOffenseSnaps = teamGamesRes.data.reduce((acc, g) => acc + (g.offense_snaps ?? 0), 0)
       setPopupData({
-        numberByPlayer, offenseByPlayer, defenseByPlayer, stByPlayer, snapByPlayer, snapTeamsByPlayer,
-        shareByPlayer, teamPriorOffenseSnaps,
+        numberByPlayer, rookieSeasonByPlayer, offenseByPlayer, defenseByPlayer, stByPlayer, snapByPlayer,
+        snapTeamsByPlayer, shareByPlayer, teamPriorOffenseSnaps,
       })
     })
 
@@ -774,15 +958,15 @@ export default function TeamPage() {
           <div className="mb-4">
             <h3 className="mb-1 text-xs font-bold uppercase text-neutral-400">Starting Offense</h3>
             <StarterRow label="QB" players={qbStarters} injuryByPlayerId={injuryByPlayerId}
-              onChipHover={handleChipHover} onChipUnhover={handleChipUnhover}
+              popupData={popupData} onChipHover={handleChipHover} onChipUnhover={handleChipUnhover}
               onHoverInjured={setHoveredInjuredPlayer}
               onUnhoverInjured={() => setHoveredInjuredPlayer(null)} />
             <StarterRow label="Offensive Line" players={olStarters} injuryByPlayerId={injuryByPlayerId}
-              onChipHover={handleChipHover} onChipUnhover={handleChipUnhover}
+              popupData={popupData} onChipHover={handleChipHover} onChipUnhover={handleChipUnhover}
               onHoverInjured={setHoveredInjuredPlayer}
               onUnhoverInjured={() => setHoveredInjuredPlayer(null)} />
             <StarterRow label="Skill" rows={[skillStartersRow1, skillStartersRow2]} injuryByPlayerId={injuryByPlayerId}
-              onChipHover={handleChipHover} onChipUnhover={handleChipUnhover}
+              popupData={popupData} onChipHover={handleChipHover} onChipUnhover={handleChipUnhover}
               onHoverInjured={setHoveredInjuredPlayer}
               onUnhoverInjured={() => setHoveredInjuredPlayer(null)} />
           </div>
@@ -790,19 +974,19 @@ export default function TeamPage() {
           <div className="mb-4">
             <h3 className="mb-1 text-xs font-bold uppercase text-neutral-400">Starting Defense</h3>
             <StarterRow label="D-Line" players={dlStarters} injuryByPlayerId={injuryByPlayerId}
-              onChipHover={handleChipHover} onChipUnhover={handleChipUnhover}
+              popupData={popupData} onChipHover={handleChipHover} onChipUnhover={handleChipUnhover}
               onHoverInjured={setHoveredInjuredPlayer}
               onUnhoverInjured={() => setHoveredInjuredPlayer(null)} />
             <StarterRow label="Linebackers" players={lbStarters} injuryByPlayerId={injuryByPlayerId}
-              onChipHover={handleChipHover} onChipUnhover={handleChipUnhover}
+              popupData={popupData} onChipHover={handleChipHover} onChipUnhover={handleChipUnhover}
               onHoverInjured={setHoveredInjuredPlayer}
               onUnhoverInjured={() => setHoveredInjuredPlayer(null)} />
             <StarterRow label="Corners" players={cbStarters} injuryByPlayerId={injuryByPlayerId}
-              onChipHover={handleChipHover} onChipUnhover={handleChipUnhover}
+              popupData={popupData} onChipHover={handleChipHover} onChipUnhover={handleChipUnhover}
               onHoverInjured={setHoveredInjuredPlayer}
               onUnhoverInjured={() => setHoveredInjuredPlayer(null)} />
             <StarterRow label="Safeties" players={sStarters} injuryByPlayerId={injuryByPlayerId}
-              onChipHover={handleChipHover} onChipUnhover={handleChipUnhover}
+              popupData={popupData} onChipHover={handleChipHover} onChipUnhover={handleChipUnhover}
               onHoverInjured={setHoveredInjuredPlayer}
               onUnhoverInjured={() => setHoveredInjuredPlayer(null)} />
           </div>
@@ -810,11 +994,11 @@ export default function TeamPage() {
           <div className="mb-2">
             <h3 className="mb-1 text-xs font-bold uppercase text-neutral-400">Special Teams</h3>
             <StarterRow label="Kicking" players={kickingStarters} injuryByPlayerId={injuryByPlayerId}
-              onChipHover={handleChipHover} onChipUnhover={handleChipUnhover}
+              popupData={popupData} onChipHover={handleChipHover} onChipUnhover={handleChipUnhover}
               onHoverInjured={setHoveredInjuredPlayer}
               onUnhoverInjured={() => setHoveredInjuredPlayer(null)} />
             <StarterRow label="Return" players={returnStarters} injuryByPlayerId={injuryByPlayerId}
-              onChipHover={handleChipHover} onChipUnhover={handleChipUnhover}
+              popupData={popupData} onChipHover={handleChipHover} onChipUnhover={handleChipUnhover}
               onHoverInjured={setHoveredInjuredPlayer}
               onUnhoverInjured={() => setHoveredInjuredPlayer(null)} />
           </div>
@@ -914,6 +1098,7 @@ export default function TeamPage() {
                   p={p}
                   injuryStatus={injuryByPlayerId.get(p.player_id)}
                   isNextUp={p === nextUpPlayer}
+                  popupData={popupData}
                   onChipHover={handleChipHover}
                   onChipUnhover={handleChipUnhover}
                   onHoverInjured={setHoveredInjuredPlayer}
@@ -927,8 +1112,9 @@ export default function TeamPage() {
 
       <InjuryLegend />
       <StatLegend />
+      <ExperienceLegend />
 
-      <HoverSidePanels hoverInfo={hoverInfo} popupData={popupData} findNextUp={findNextUp} />
+      <HoverSidePanels hoverInfo={hoverInfo} popupData={popupData} rankPools={rankPools} findNextUp={findNextUp} />
     </div>
   )
 }
