@@ -1,12 +1,16 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { supabase } from './supabaseClient'
+import LoadingSpinner from './LoadingSpinner'
 
 const SEASONS = [2026, 2025, 2024]
 const DEFAULT_SEASON = 2025
 const WEEKS = Array.from({ length: 18 }, (_, i) => i + 1)
+const ROW_LIMIT = 50
 
 // Two-level toggle: pick a top-level group, then (for anything but Weeks)
-// which of its rule-sets to view. Each leaf's key is what MOCK_ROWS.category
-// and STAT_COLUMNS are keyed by. "Coaching > Defense/Offense" are the team-
+// which of its rule-sets to view. Each leaf's key maps to a real fantasy-
+// points column (POINTS_COLUMN/TEAM_POINTS_COLUMN below) and to a raw-stat
+// column set (STAT_COLUMNS). "Coaching > Defense/Offense" are the team-
 // level Defensive/Offensive Coordinator stats, not the individual IDP
 // Defense group -- kept as coach-defense/coach-offense so they don't
 // collide with the top-level Defense group's own leaves.
@@ -106,8 +110,8 @@ const STAT_COLUMNS = {
     { key: 'oppRushTd', label: 'Opp Rush TD' },
     { key: 'sacks', label: 'Sacks' },
     { key: 'int', label: 'INT' },
-    { key: 'passYdsAllowed', label: 'Pass Yds Allowed' },
-    { key: 'rushYdsAllowed', label: 'Rush Yds Allowed' },
+    { key: 'passYdsAllowed', label: 'Pass Yds/G Allowed' },
+    { key: 'rushYdsAllowed', label: 'Rush Yds/G Allowed' },
   ],
   'coach-offense': [
     { key: 'passTd', label: 'Pass TD' },
@@ -134,44 +138,83 @@ const STAT_COLUMNS = {
   ],
 }
 
-// Preview-only mock rows -- there's no fantasy-scoring database yet (the
-// real version needs a new table built from the Fantasy Rules formulas,
-// generalized across whichever roster position actually recorded each
-// event). Just enough here to see the shape of the table before that
-// work happens. `category` is the leaf key from TOP_CATEGORIES[*].subs
-// that surfaces this row. `isTeam` rows (Coaching > Defense/Offense) show
-// the full team name, not a player's last name.
-const MOCK_ROWS = [
-  { name: 'Josh Allen', legalPosition: 'QB', team: 'BUF', category: 'passing', seasonAvg: 24.8 },
-  { name: 'Saquon Barkley', legalPosition: 'IDP/Skill', team: 'PHI', category: 'rushing', seasonAvg: 21.3 },
-  { name: "Ja'Marr Chase", legalPosition: 'IDP/Skill', team: 'CIN', category: 'receiving', seasonAvg: 19.6 },
-  { name: 'Travis Kelce', legalPosition: 'IDP/Skill', team: 'KC', category: 'receiving', seasonAvg: 15.2 },
-  { name: 'Kyle Juszczyk', legalPosition: 'IDP/Skill', team: 'SF', category: 'blocking-bonus', seasonAvg: 4.3 },
-  { name: 'Myles Garrett', legalPosition: 'IDP/Skill', team: 'CLE', category: 'pressure', seasonAvg: 12.7 },
-  { name: 'Fred Warner', legalPosition: 'IDP/Skill', team: 'SF', category: 'coverage', seasonAvg: 13.9 },
-  { name: 'Patrick Surtain II', legalPosition: 'IDP/Skill', team: 'DEN', category: 'turnover', seasonAvg: 11.1 },
-  { name: 'Andy Reid', legalPosition: 'Head Coach', team: 'KC', category: 'coach-head', seasonAvg: 6.1 },
-  { name: 'Buffalo Bills', legalPosition: 'Def', team: 'BUF', category: 'coach-defense', seasonAvg: 14.2, isTeam: true },
-  { name: 'Kansas City Chiefs', legalPosition: 'ST', team: 'KC', category: 'coach-offense', seasonAvg: 16.8, isTeam: true },
-  { name: 'Justin Tucker', legalPosition: 'PK', team: 'BAL', category: 'kicking', seasonAvg: 9.4 },
-  { name: 'AJ Cole', legalPosition: 'PN', team: 'LV', category: 'punting', seasonAvg: 7.6 },
-  { name: 'KaVontae Turpin', legalPosition: 'IDP/Skill', team: 'DAL', category: 'returning', seasonAvg: 8.2 },
-]
+// Which player_season_fantasy_points / team_season_fantasy_points column
+// ranks each leaf category, and (for player categories) which raw stat
+// rollup feeds STAT_COLUMNS' values.
+const POINTS_COLUMN = {
+  passing: 'passing_points', receiving: 'receiving_points', rushing: 'rushing_points',
+  'blocking-bonus': 'blocking_bonus_points', pressure: 'pressure_points', coverage: 'coverage_points',
+  turnover: 'turnover_points', kicking: 'kicking_points', punting: 'punting_points',
+  returning: 'returning_points',
+}
+const TEAM_POINTS_COLUMN = {
+  'coach-head': 'coach_head_points', 'coach-offense': 'coach_offense_points',
+  'coach-defense': 'coach_defense_points',
+}
+const TEAM_AVG_COLUMN = {
+  'coach-head': 'coach_head_avg', 'coach-offense': 'coach_offense_avg',
+  'coach-defense': 'coach_defense_avg',
+}
+const COACH_LABEL = { 'coach-head': 'Head Coach', 'coach-offense': 'ST', 'coach-defense': 'Def' }
+
+// nflverse's own position codes are 'K'/'P' -- the legal-lineup slots
+// (per fantasyRulesData.js's STARTING_LINEUP_ROWS) call them PK/PN.
+function legalPosition(position) {
+  if (position === 'QB') return 'QB'
+  if (position === 'K') return 'PK'
+  if (position === 'P') return 'PN'
+  return 'IDP/Skill'
+}
 
 function lastNameOnly(fullName) {
   const rest = fullName.split(' ').slice(1).join(' ')
   return rest || fullName
 }
 
-function mockWeekScore(seed, week) {
-  // Deterministic pseudo-random placeholder so reloading doesn't jitter.
-  const n = Math.sin(seed * 999 + week) * 10000
-  return Math.round(((n - Math.floor(n)) * 20 + 2) * 10) / 10
+function round1(n) {
+  if (n == null || Number.isNaN(n)) return null
+  return Math.round(n * 10) / 10
 }
 
-function mockStatValue(seed, colIndex) {
-  const n = Math.sin(seed * 555 + colIndex * 37) * 10000
-  return Math.round((n - Math.floor(n)) * 20)
+// PostgREST caps a single response at 1000 rows -- fine for anything
+// filtered to one player/team, but these leaguewide rank pools need every
+// row, so page through with .range() until a page comes back short.
+async function fetchAllRows(queryFactory) {
+  const pageSize = 1000
+  let allData = []
+  let from = 0
+  for (;;) {
+    const { data, error } = await queryFactory().range(from, from + pageSize - 1)
+    if (error) return { data: null, error }
+    allData = allData.concat(data)
+    if (data.length < pageSize) break
+    from += pageSize
+  }
+  return { data: allData, error: null }
+}
+
+// Merges a player's rows across teams (a mid-season trade means more than
+// one team row per player per season) into one summed totals object, plus
+// whichever team was seen last.
+function sumByPlayer(rows, fields) {
+  const map = new Map()
+  for (const r of rows) {
+    const cur = map.get(r.player_id) ?? { team: r.team, ...Object.fromEntries(fields.map((f) => [f, 0])) }
+    cur.team = r.team
+    for (const f of fields) cur[f] += Number(r[f] ?? 0)
+    map.set(r.player_id, cur)
+  }
+  return map
+}
+
+function sumByTeam(rows, fields) {
+  const map = new Map()
+  for (const r of rows) {
+    const cur = map.get(r.team) ?? Object.fromEntries(fields.map((f) => [f, 0]))
+    for (const f of fields) cur[f] += Number(r[f] ?? 0)
+    map.set(r.team, cur)
+  }
+  return map
 }
 
 // Pixel widths/offsets for the frozen columns (logo, name, total, avg) --
@@ -210,9 +253,190 @@ export default function FantasyScoresPage() {
   const [season, setSeason] = useState(DEFAULT_SEASON)
   const [topKey, setTopKey] = useState('weeks')
   const [subKey, setSubKey] = useState(null)
+  const [players, setPlayers] = useState([])
+  const [teams, setTeams] = useState([])
+  const [fantasyPoints, setFantasyPoints] = useState([])
+  const [gamePoints, setGamePoints] = useState([])
+  const [offenseStats, setOffenseStats] = useState([])
+  const [defenseStats, setDefenseStats] = useState([])
+  const [specialStats, setSpecialStats] = useState([])
+  const [teamFantasyPoints, setTeamFantasyPoints] = useState([])
+  const [teamSeasonStats, setTeamSeasonStats] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    fetchAllRows(() => supabase.from('players').select('player_id, display_name, position')).then(
+      ({ data }) => data && setPlayers(data),
+    )
+    supabase.from('teams').select('team_abbr, team_name').then(({ data }) => data && setTeams(data))
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    Promise.all([
+      fetchAllRows(() => supabase.from('player_season_fantasy_points').select('*').eq('season', season)),
+      fetchAllRows(() =>
+        supabase
+          .from('player_game_fantasy_points')
+          .select('player_id, total_points, games!inner(week, season)')
+          .eq('games.season', season),
+      ),
+      fetchAllRows(() => supabase.from('player_season_offense_stats').select('*').eq('season', season)),
+      fetchAllRows(() => supabase.from('player_season_defense_stats').select('*').eq('season', season)),
+      fetchAllRows(() => supabase.from('player_season_special_teams_stats').select('*').eq('season', season)),
+      fetchAllRows(() => supabase.from('team_season_fantasy_points').select('*').eq('season', season)),
+      fetchAllRows(() => supabase.from('team_season_stats').select('*').eq('season', season)),
+    ]).then(([fp, gp, off, def, spec, tfp, tss]) => {
+      if (cancelled) return
+      setFantasyPoints(fp.data ?? [])
+      setGamePoints(gp.data ?? [])
+      setOffenseStats(off.data ?? [])
+      setDefenseStats(def.data ?? [])
+      setSpecialStats(spec.data ?? [])
+      setTeamFantasyPoints(tfp.data ?? [])
+      setTeamSeasonStats(tss.data ?? [])
+      setLoading(false)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [season])
+
+  const playersById = useMemo(() => new Map(players.map((p) => [p.player_id, p])), [players])
+  const teamsByAbbr = useMemo(() => new Map(teams.map((t) => [t.team_abbr, t])), [teams])
+  const teamSeasonByAbbr = useMemo(() => new Map(teamSeasonStats.map((r) => [r.team, r])), [teamSeasonStats])
+
+  const offenseByPlayer = useMemo(
+    () =>
+      sumByPlayer(offenseStats, [
+        'completions', 'attempts', 'passing_yards', 'passing_tds', 'passing_interceptions',
+        'carries', 'rushing_yards', 'rushing_tds', 'receptions', 'targets', 'receiving_yards',
+        'receiving_tds',
+      ]),
+    [offenseStats],
+  )
+  const defenseByPlayer = useMemo(
+    () =>
+      sumByPlayer(defenseStats, [
+        'def_tackles_for_loss', 'def_qb_hits', 'def_sacks', 'def_tackles_solo',
+        'def_tackles_with_assist', 'def_pass_defended', 'def_fumbles_forced', 'fumble_recovery_opp',
+        'def_interceptions', 'fumble_recovery_yards_opp',
+      ]),
+    [defenseStats],
+  )
+  const specialByPlayer = useMemo(
+    () =>
+      sumByPlayer(specialStats, [
+        'fg_made', 'fg_att', 'pat_made', 'pt_att', 'pt_yards', 'kickoff_returns',
+        'kickoff_return_yards', 'punt_returns', 'punt_return_yards',
+      ]),
+    [specialStats],
+  )
+  const firstDownsByTeam = useMemo(
+    () => sumByTeam(offenseStats, ['passing_first_downs', 'rushing_first_downs', 'receiving_first_downs']),
+    [offenseStats],
+  )
+  const weekScoresByPlayer = useMemo(() => {
+    const map = new Map()
+    for (const r of gamePoints) {
+      const week = r.games?.week
+      if (!week) continue
+      const cur = map.get(r.player_id) ?? {}
+      cur[week] = (cur[week] ?? 0) + Number(r.total_points ?? 0)
+      map.set(r.player_id, cur)
+    }
+    return map
+  }, [gamePoints])
+
+  function teamOf(playerId) {
+    return (
+      offenseByPlayer.get(playerId)?.team ?? defenseByPlayer.get(playerId)?.team
+      ?? specialByPlayer.get(playerId)?.team ?? null
+    )
+  }
+
+  function statValuesFor(category, playerId, team) {
+    switch (category) {
+      case 'passing': {
+        const s = offenseByPlayer.get(playerId)
+        return s && { comp: s.completions, att: s.attempts, yds: s.passing_yards, td: s.passing_tds, int: s.passing_interceptions }
+      }
+      case 'receiving': {
+        const s = offenseByPlayer.get(playerId)
+        return s && { rec: s.receptions, targets: s.targets, yds: s.receiving_yards, td: s.receiving_tds }
+      }
+      case 'rushing': {
+        const s = offenseByPlayer.get(playerId)
+        return s && { att: s.carries, yds: s.rushing_yards, td: s.rushing_tds }
+      }
+      case 'blocking-bonus': {
+        const s = offenseByPlayer.get(playerId)
+        if (!s) return null
+        return {
+          avgPassComp: s.completions ? round1(s.passing_yards / s.completions) : 0,
+          avgRush: s.carries ? round1(s.rushing_yards / s.carries) : 0,
+          rushAtt: s.carries,
+          avgRec: s.receptions ? round1(s.receiving_yards / s.receptions) : 0,
+        }
+      }
+      case 'pressure': {
+        const s = defenseByPlayer.get(playerId)
+        return s && { tfl: s.def_tackles_for_loss, qbHits: s.def_qb_hits, sacks: s.def_sacks }
+      }
+      case 'coverage': {
+        const s = defenseByPlayer.get(playerId)
+        return s && { tkl: s.def_tackles_solo, ast: s.def_tackles_with_assist, pd: s.def_pass_defended }
+      }
+      case 'turnover': {
+        const s = defenseByPlayer.get(playerId)
+        return (
+          s && {
+            ff: s.def_fumbles_forced, fr: s.fumble_recovery_opp, int: s.def_interceptions,
+            frYds: s.fumble_recovery_yards_opp, intYds: s.def_interception_yards,
+          }
+        )
+      }
+      case 'kicking': {
+        const s = specialByPlayer.get(playerId)
+        return s && { fgMade: s.fg_made, fgAtt: s.fg_att, xpMade: s.pat_made }
+      }
+      case 'punting': {
+        const s = specialByPlayer.get(playerId)
+        return s && { punts: s.pt_att, puntYds: s.pt_yards, puntAvg: s.pt_att ? round1(s.pt_yards / s.pt_att) : 0 }
+      }
+      case 'returning': {
+        const s = specialByPlayer.get(playerId)
+        return s && { kr: s.kickoff_returns, krYds: s.kickoff_return_yards, pr: s.punt_returns, prYds: s.punt_return_yards }
+      }
+      case 'coach-head': {
+        const t = teamSeasonByAbbr.get(team)
+        return t && { won: t.wins, lost: t.losses, tied: t.ties, ptDiff: t.point_diff }
+      }
+      case 'coach-offense': {
+        const t = teamSeasonByAbbr.get(team)
+        if (!t) return null
+        const fd = firstDownsByTeam.get(team)
+        const firstDowns = fd ? fd.passing_first_downs + fd.rushing_first_downs + fd.receiving_first_downs : 0
+        return { passTd: t.pass_td, rushTd: t.rush_td, fgMade: t.fg_made, firstDowns, fumblesLost: t.turnovers_fumble }
+      }
+      case 'coach-defense': {
+        const t = teamSeasonByAbbr.get(team)
+        return (
+          t && {
+            oppPassTd: t.pass_td_allowed, oppRushTd: t.rush_td_allowed, sacks: t.sacks, int: t.def_ints,
+            passYdsAllowed: round1(t.pass_yds_allowed_avg), rushYdsAllowed: round1(t.rush_yds_allowed_avg),
+          }
+        )
+      }
+      default:
+        return null
+    }
+  }
 
   const topCategory = TOP_CATEGORIES.find((c) => c.key === topKey)
   const isWeeks = topKey === 'weeks'
+  const isCoaching = topKey === 'coaching'
   const activeSub = isWeeks ? null : subKey ?? topCategory.subs[0].key
 
   function selectTop(key) {
@@ -221,7 +445,72 @@ export default function FantasyScoresPage() {
     setSubKey(cat.subs ? cat.subs[0].key : null)
   }
 
-  const rows = isWeeks ? MOCK_ROWS : MOCK_ROWS.filter((r) => r.category === activeSub)
+  const rows = useMemo(() => {
+    if (isWeeks) {
+      return fantasyPoints
+        .slice()
+        .sort((a, b) => Number(b.total_points) - Number(a.total_points))
+        .slice(0, ROW_LIMIT)
+        .map((fp) => {
+          const player = playersById.get(fp.player_id)
+          return {
+            key: fp.player_id,
+            playerId: fp.player_id,
+            name: player?.display_name ?? fp.player_id,
+            legalPosition: legalPosition(player?.position),
+            team: teamOf(fp.player_id) ?? '???',
+            total: Number(fp.total_points),
+            avg: Number(fp.avg_points),
+          }
+        })
+    }
+
+    if (isCoaching) {
+      const col = TEAM_POINTS_COLUMN[activeSub]
+      const avgCol = TEAM_AVG_COLUMN[activeSub]
+      return teamFantasyPoints
+        .filter((r) => r[col] != null)
+        .slice()
+        .sort((a, b) => Number(b[col]) - Number(a[col]))
+        .slice(0, ROW_LIMIT)
+        .map((r) => ({
+          key: r.team,
+          name: teamsByAbbr.get(r.team)?.team_name ?? r.team,
+          legalPosition: COACH_LABEL[activeSub],
+          team: r.team,
+          total: Number(r[col]),
+          avg: Number(r[avgCol]),
+          isTeam: true,
+          statValues: statValuesFor(activeSub, null, r.team),
+        }))
+    }
+
+    const col = POINTS_COLUMN[activeSub]
+    return fantasyPoints
+      .filter((r) => r[col] != null && Number(r[col]) !== 0)
+      .slice()
+      .sort((a, b) => Number(b[col]) - Number(a[col]))
+      .slice(0, ROW_LIMIT)
+      .map((fp) => {
+        const player = playersById.get(fp.player_id)
+        const team = teamOf(fp.player_id) ?? '???'
+        return {
+          key: fp.player_id,
+          playerId: fp.player_id,
+          name: player?.display_name ?? fp.player_id,
+          legalPosition: legalPosition(player?.position),
+          team,
+          total: Number(fp[col]),
+          avg: round1(Number(fp[col]) / Number(fp.games)),
+          statValues: statValuesFor(activeSub, fp.player_id, team),
+        }
+      })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    isWeeks, isCoaching, activeSub, fantasyPoints, teamFantasyPoints, playersById, teamsByAbbr,
+    offenseByPlayer, defenseByPlayer, specialByPlayer, teamSeasonByAbbr, firstDownsByTeam,
+  ])
+
   const scrollColumns = isWeeks ? WEEKS.map((w) => ({ key: w, label: `Wk ${w}` })) : STAT_COLUMNS[activeSub]
   // table-layout:fixed alone doesn't stop a <table> shrinking below the
   // sum of its declared column widths to fit its container -- an explicit
@@ -233,13 +522,21 @@ export default function FantasyScoresPage() {
     <div className="mx-auto w-full max-w-6xl px-4 py-6">
       <h1 className="mb-2 text-2xl font-semibold text-neutral-900 dark:text-neutral-100">Fantasy Scores</h1>
       <p className="mb-4 max-w-2xl text-sm text-neutral-500">
-        Top fantasy scorers among the legal roster positions, using the{' '}
+        Top fantasy scorers among the legal roster positions, computed from real nflverse box scores using the{' '}
         <a href="#/rules" className="underline">
           Fantasy Rules
         </a>{' '}
-        scoring formulas. This is a layout preview -- the real scoring numbers need a new database
-        table computed from every player's actual weekly stats generalized to the legal positions, not
-        real data yet.
+        scoring formulas. Refreshed automatically every night as new games are played -- a few sub-bonuses
+        aren't computable from the available per-game stat aggregates (touchdown-length tiers, some
+        cross-player attribution, individual blocked-kick credit, and two Defensive Coordinator items); see{' '}
+        <code className="rounded bg-neutral-100 px-1 py-0.5 text-xs dark:bg-neutral-800">
+          build_fantasy_scores.py
+        </code>{' '}
+        and{' '}
+        <code className="rounded bg-neutral-100 px-1 py-0.5 text-xs dark:bg-neutral-800">
+          build_coach_fantasy_scores.py
+        </code>{' '}
+        for the exact list.
       </p>
 
       <div className="mb-4 flex gap-2">
@@ -278,56 +575,50 @@ export default function FantasyScoresPage() {
       )}
       {isWeeks && <div className="mb-4" />}
 
-      <div className="mb-4 rounded border border-yellow-300 bg-yellow-50 px-3 py-2 text-xs text-yellow-800 dark:border-yellow-800 dark:bg-yellow-950/30 dark:text-yellow-400">
-        Preview data below -- not real scores yet.
-      </div>
-
-      <div className="overflow-x-auto">
-        <table className="border-collapse text-sm" style={{ tableLayout: 'fixed', width: tableWidth }}>
-          <thead>
-            <tr className="border-b border-neutral-200 text-left text-neutral-500 dark:border-neutral-800">
-              <th className={`${FROZEN_TD} py-2 font-medium`} style={{ left: COL_LEFT.logo, width: COL_WIDTHS.logo }} />
-              <th className={`${FROZEN_TD} py-2 pr-2 font-medium`} style={{ left: COL_LEFT.name, width: COL_WIDTHS.name }}>
-                Player
-              </th>
-              <th
-                className={`${FROZEN_TD} px-2 py-2 text-right font-medium`}
-                style={{ left: COL_LEFT.total, width: COL_WIDTHS.total }}
-              >
-                Total
-              </th>
-              <th
-                className={`${FROZEN_TD} px-2 py-2 text-right font-medium`}
-                style={{ left: COL_LEFT.avg, width: COL_WIDTHS.avg, ...DIVIDER_STYLE }}
-              >
-                Avg
-              </th>
-              {scrollColumns.map((col) => (
-                <th
-                  key={col.key}
-                  className="border-l border-neutral-200 px-2 py-2 text-right font-medium dark:border-neutral-800"
-                  style={{ width: SCROLL_COL_WIDTH }}
-                >
-                  {col.label}
+      {loading ? (
+        <LoadingSpinner />
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="border-collapse text-sm" style={{ tableLayout: 'fixed', width: tableWidth }}>
+            <thead>
+              <tr className="border-b border-neutral-200 text-left text-neutral-500 dark:border-neutral-800">
+                <th className={`${FROZEN_TD} py-2 font-medium`} style={{ left: COL_LEFT.logo, width: COL_WIDTHS.logo }} />
+                <th className={`${FROZEN_TD} py-2 pr-2 font-medium`} style={{ left: COL_LEFT.name, width: COL_WIDTHS.name }}>
+                  Player
                 </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.length === 0 && (
-              <tr>
-                <td colSpan={4 + scrollColumns.length} className="py-6 text-center text-sm text-neutral-400">
-                  No preview rows tagged for this category yet.
-                </td>
+                <th
+                  className={`${FROZEN_TD} px-2 py-2 text-right font-medium`}
+                  style={{ left: COL_LEFT.total, width: COL_WIDTHS.total }}
+                >
+                  Total
+                </th>
+                <th
+                  className={`${FROZEN_TD} px-2 py-2 text-right font-medium`}
+                  style={{ left: COL_LEFT.avg, width: COL_WIDTHS.avg, ...DIVIDER_STYLE }}
+                >
+                  Avg
+                </th>
+                {scrollColumns.map((col) => (
+                  <th
+                    key={col.key}
+                    className="border-l border-neutral-200 px-2 py-2 text-right font-medium dark:border-neutral-800"
+                    style={{ width: SCROLL_COL_WIDTH }}
+                  >
+                    {col.label}
+                  </th>
+                ))}
               </tr>
-            )}
-            {rows.map((r, i) => {
-              const weekScores = isWeeks ? WEEKS.map((w) => mockWeekScore(i + 1, w)) : null
-              const total = weekScores
-                ? Math.round(weekScores.reduce((a, b) => a + b, 0) * 10) / 10
-                : Math.round(r.seasonAvg * 17 * 10) / 10
-              return (
-                <tr key={r.name} className="border-b border-neutral-100 dark:border-neutral-900">
+            </thead>
+            <tbody>
+              {rows.length === 0 && (
+                <tr>
+                  <td colSpan={4 + scrollColumns.length} className="py-6 text-center text-sm text-neutral-400">
+                    No fantasy data yet for {season} -- check back once games are played.
+                  </td>
+                </tr>
+              )}
+              {rows.map((r) => (
+                <tr key={r.key} className="border-b border-neutral-100 dark:border-neutral-900">
                   <td className={`${FROZEN_TD} py-2`} style={{ left: COL_LEFT.logo, width: COL_WIDTHS.logo }}>
                     <img
                       src={`${import.meta.env.BASE_URL}logos/${r.team}.png`}
@@ -345,37 +636,37 @@ export default function FantasyScoresPage() {
                     className={`${FROZEN_TD} px-2 py-2 text-right font-semibold tabular-nums text-neutral-900 dark:text-neutral-100`}
                     style={{ left: COL_LEFT.total, width: COL_WIDTHS.total }}
                   >
-                    {total}
+                    {r.total}
                   </td>
                   <td
                     className={`${FROZEN_TD} px-2 py-2 text-right tabular-nums text-neutral-600 dark:text-neutral-400`}
                     style={{ left: COL_LEFT.avg, width: COL_WIDTHS.avg, ...DIVIDER_STYLE }}
                   >
-                    {r.seasonAvg}
+                    {r.avg}
                   </td>
                   {isWeeks
-                    ? weekScores.map((s, wi) => (
+                    ? WEEKS.map((w) => (
                         <td
-                          key={wi}
+                          key={w}
                           className="border-l border-neutral-100 px-2 py-2 text-right tabular-nums text-neutral-600 dark:border-neutral-900 dark:text-neutral-400"
                         >
-                          {s}
+                          {weekScoresByPlayer.get(r.playerId)?.[w] ?? '—'}
                         </td>
                       ))
-                    : scrollColumns.map((col, ci) => (
+                    : scrollColumns.map((col) => (
                         <td
                           key={col.key}
                           className="border-l border-neutral-100 px-2 py-2 text-right tabular-nums text-neutral-600 dark:border-neutral-900 dark:text-neutral-400"
                         >
-                          {mockStatValue(i + 1, ci)}
+                          {r.statValues?.[col.key] ?? '—'}
                         </td>
                       ))}
                 </tr>
-              )
-            })}
-          </tbody>
-        </table>
-      </div>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   )
 }

@@ -115,9 +115,14 @@ TABLE_SPECS = [
 
     ("player_game_fantasy_points", [
         "player_id", "game_id", "team", "passing_points", "rushing_points", "receiving_points",
-        "blocking_bonus_points", "fumbles_fouls_points", "defense_points", "kicking_points",
-        "punting_points", "returning_points", "total_points",
+        "blocking_bonus_points", "fumbles_fouls_points", "defense_points", "pressure_points",
+        "coverage_points", "turnover_points", "kicking_points", "punting_points",
+        "returning_points", "total_points",
     ], season_sources("player_game_fantasy_points"), None),
+
+    ("team_game_fantasy_points", [
+        "team", "game_id", "coach_head_points", "coach_offense_points", "coach_defense_points",
+    ], season_sources("team_game_fantasy_points"), None),
 
     ("college_rosters", ["athlete_id", "player_id", "first_name", "last_name", "full_name",
                          "team", "position", "jersey", "class_year", "height", "weight",
@@ -184,6 +189,7 @@ PK_COLUMNS = {
     "player_defense_stats": ["player_id", "game_id"],
     "player_special_teams_stats": ["player_id", "game_id"],
     "player_game_fantasy_points": ["player_id", "game_id"],
+    "team_game_fantasy_points": ["team", "game_id"],
     "college_rosters": ["athlete_id", "season"],
     "college_player_season_stats": ["athlete_id", "season"],
     "active_roster": ["player_id"], "current_injury_report": ["player_id"],
@@ -255,7 +261,7 @@ def main():
     for view in ["team_game_stats", "team_season_stats", "player_season_offense_stats",
                  "player_season_defense_stats", "player_season_special_teams_stats",
                  "player_season_snap_counts", "team_share_stats", "player_season_share_stats",
-                 "player_season_fantasy_points"]:
+                 "player_season_fantasy_points", "team_season_fantasy_points"]:
         run_psql(f"REFRESH MATERIALIZED VIEW {view};")
 
     print("Done.")

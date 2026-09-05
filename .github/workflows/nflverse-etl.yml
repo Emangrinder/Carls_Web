@@ -51,6 +51,20 @@ jobs:
             python3 etl/data/player_management/history/injuries/build_injuries.py --season "$season"
           done
 
+      - name: Build fantasy scores for each retained season
+        # Applies the Fantasy Rules formulas on top of the box scores just
+        # built above. Safe to run every night regardless of where the
+        # season is -- an unplayed/future week just yields 0 rows, same as
+        # build_db.py's own per-season stat files, so scores populate
+        # automatically as each week's games are played, with no manual
+        # step needed when a new season starts.
+        run: |
+          set -e
+          for season in $SEASONS; do
+            python3 etl/data/nflverse/build_fantasy_scores.py --season "$season"
+            python3 etl/data/nflverse/build_coach_fantasy_scores.py --season "$season"
+          done
+
       - name: Build current-season snapshots (roster, injuries, depth chart)
         run: |
           python3 etl/data/player_management/active/build_active_roster.py --season "$CURRENT_SEASON"

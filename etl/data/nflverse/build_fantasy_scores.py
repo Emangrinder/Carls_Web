@@ -186,19 +186,29 @@ def compute_defense_fumbles(r):
     return to_num(r["fumble_recovery_own"]) * 2 + to_num(r["fumble_recovery_yards_own"]) * 0.1 + to_num(r["penalty_yards"]) * -0.2
 
 
-def compute_defense(r):
+def compute_pressure(r):
+    return (
+        to_num(r["def_sacks"]) * 2
+        + to_num(r["def_sack_yards"]) * 0.3
+        + to_num(r["def_tackles_for_loss"]) * 3
+    )
+
+
+def compute_coverage(r):
+    return (
+        to_num(r["def_tackles_solo"]) * 1.2
+        + to_num(r["def_tackles_with_assist"]) * 0.6
+        + to_num(r["def_pass_defended"]) * 4
+    )
+
+
+def compute_turnover(r):
     return (
         to_num(r["def_fumbles_forced"]) * 3
         + to_num(r["fumble_recovery_opp"]) * 3
         + to_num(r["fumble_recovery_yards_opp"]) * 0.3
         + to_num(r["def_interceptions"]) * 5
         + to_num(r["def_interception_yards"]) * 0.3
-        + to_num(r["def_pass_defended"]) * 4
-        + to_num(r["def_tackles_solo"]) * 1.2
-        + to_num(r["def_tackles_with_assist"]) * 0.6
-        + to_num(r["def_sacks"]) * 2
-        + to_num(r["def_sack_yards"]) * 0.3
-        + to_num(r["def_tackles_for_loss"]) * 3
         + to_num(r["def_safeties"]) * 2
         + to_num(r["def_tds"]) * 5
     )
@@ -252,6 +262,9 @@ def build_fantasy_scores(season: int):
             blocking_bonus_points REAL,
             fumbles_fouls_points REAL,
             defense_points REAL,
+            pressure_points REAL,
+            coverage_points REAL,
+            turnover_points REAL,
             kicking_points REAL,
             punting_points REAL,
             returning_points REAL,
@@ -272,7 +285,8 @@ def build_fantasy_scores(season: int):
             rows_by_key[key] = {
                 "player_id": player_id, "game_id": game_id, "team": team,
                 "passing": 0.0, "rushing": 0.0, "receiving": 0.0, "blocking_bonus": 0.0,
-                "fumbles_fouls": 0.0, "defense": 0.0, "kicking": 0.0, "punting": 0.0, "returning": 0.0,
+                "fumbles_fouls": 0.0, "pressure": 0.0, "coverage": 0.0, "turnover": 0.0,
+                "kicking": 0.0, "punting": 0.0, "returning": 0.0,
             }
         return rows_by_key[key]
 
@@ -288,7 +302,9 @@ def build_fantasy_scores(season: int):
 
     for r in cur.execute("SELECT * FROM player_defense_stats"):
         row = get_row(r["player_id"], r["game_id"], r["team"])
-        row["defense"] += compute_defense(r)
+        row["pressure"] += compute_pressure(r)
+        row["coverage"] += compute_coverage(r)
+        row["turnover"] += compute_turnover(r)
         row["fumbles_fouls"] += compute_defense_fumbles(r)
         n_def += 1
 
@@ -300,20 +316,23 @@ def build_fantasy_scores(season: int):
         n_st += 1
 
     for row in rows_by_key.values():
+        defense = row["pressure"] + row["coverage"] + row["turnover"]
         total = (
             row["passing"] + row["rushing"] + row["receiving"] + row["blocking_bonus"]
-            + row["fumbles_fouls"] + row["defense"] + row["kicking"] + row["punting"] + row["returning"]
+            + row["fumbles_fouls"] + defense + row["kicking"] + row["punting"] + row["returning"]
         )
         cur.execute(
             """INSERT INTO player_game_fantasy_points (
                 player_id, game_id, team, passing_points, rushing_points, receiving_points,
-                blocking_bonus_points, fumbles_fouls_points, defense_points, kicking_points,
-                punting_points, returning_points, total_points
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                blocking_bonus_points, fumbles_fouls_points, defense_points, pressure_points,
+                coverage_points, turnover_points, kicking_points, punting_points, returning_points,
+                total_points
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 row["player_id"], row["game_id"], row["team"],
                 round(row["passing"], 3), round(row["rushing"], 3), round(row["receiving"], 3),
-                round(row["blocking_bonus"], 3), round(row["fumbles_fouls"], 3), round(row["defense"], 3),
+                round(row["blocking_bonus"], 3), round(row["fumbles_fouls"], 3), round(defense, 3),
+                round(row["pressure"], 3), round(row["coverage"], 3), round(row["turnover"], 3),
                 round(row["kicking"], 3), round(row["punting"], 3), round(row["returning"], 3),
                 round(total, 3),
             ),

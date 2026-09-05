@@ -242,10 +242,27 @@ CREATE TABLE player_game_fantasy_points (
     receiving_points       REAL,
     blocking_bonus_points  REAL,
     fumbles_fouls_points   REAL,
-    defense_points         REAL,
+    defense_points         REAL,       -- = pressure + coverage + turnover points
+    pressure_points        REAL,
+    coverage_points        REAL,
+    turnover_points        REAL,
     kicking_points         REAL,
     punting_points         REAL,
     returning_points       REAL,
     total_points           REAL NOT NULL,
     PRIMARY KEY (player_id, game_id)
+);
+
+-- Computed by build_coach_fantasy_scores.py -- the three team-level
+-- coaching roles (Head Coach/Offensive Coordinator/Defensive Coordinator),
+-- aggregated from the same per-player stat tables up to the team level.
+-- See that script's own docstring for the couple of sub-bonuses that
+-- aren't computable from these aggregates.
+CREATE TABLE team_game_fantasy_points (
+    team                   TEXT REFERENCES teams(team_abbr),
+    game_id                TEXT REFERENCES games(game_id),
+    coach_head_points      REAL,
+    coach_offense_points   REAL,
+    coach_defense_points   REAL,
+    PRIMARY KEY (team, game_id)
 );
