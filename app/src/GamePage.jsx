@@ -225,7 +225,7 @@ function TeamHeader({ abbr, name, score, isWinner, played, align }) {
       />
       <div>
         <div
-          className={`text-lg font-semibold ${
+          className={`hidden text-lg font-semibold sm:block ${
             isWinner ? 'text-neutral-900 dark:text-neutral-100' : 'text-neutral-500 dark:text-neutral-400'
           }`}
         >
@@ -419,6 +419,7 @@ export default function GamePage() {
   const [teams, setTeams] = useState([])
   const [teamGameStats, setTeamGameStats] = useState([])
   const [seasonRows, setSeasonRows] = useState([])
+  const [priorSeasonRows, setPriorSeasonRows] = useState([])
   const [recordGames, setRecordGames] = useState([])
   const [injuries, setInjuries] = useState([])
   const [injuryDepthRanks, setInjuryDepthRanks] = useState([])
@@ -509,6 +510,22 @@ export default function GamePage() {
           }
           setLoading(false)
 
+          // Week 1 has no games yet this season, so the "Heading In" window
+          // would otherwise be empty -- fall back to last season's full-year
+          // stats so there's still something to show.
+          if (gameData.game_type === 'REG' && gameData.week === 1) {
+            supabase
+              .from('team_game_stats')
+              .select('*')
+              .eq('season', gameData.season - 1)
+              .eq('game_type', 'REG')
+              .in('team', teamAbbrs)
+              .then(({ data, error: priorErr }) => {
+                if (cancelled || priorErr) return
+                setPriorSeasonRows(data)
+              })
+          }
+
           // Depth chart rank and season-to-date snaps for whoever's on the
           // injury report -- a second round-trip since both depend on the
           // player_id list the injuries query above just resolved.
@@ -553,10 +570,19 @@ export default function GamePage() {
 
   const homeSeasonRows = seasonRows.filter((r) => r.team === game.home_team)
   const awaySeasonRows = seasonRows.filter((r) => r.team === game.away_team)
-  const homePregameRows =
-    game.game_type === 'REG' ? homeSeasonRows.filter((r) => r.week < game.week) : homeSeasonRows
-  const awayPregameRows =
-    game.game_type === 'REG' ? awaySeasonRows.filter((r) => r.week < game.week) : awaySeasonRows
+  const isWeekOne = game.game_type === 'REG' && game.week === 1
+  let homePregameRows = isWeekOne ? [] : homeSeasonRows.filter((r) => r.week < game.week)
+  let awayPregameRows = isWeekOne ? [] : awaySeasonRows.filter((r) => r.week < game.week)
+  if (game.game_type !== 'REG') {
+    homePregameRows = homeSeasonRows
+    awayPregameRows = awaySeasonRows
+  }
+  // Week 1: no games yet this season to average, so fall back to last
+  // season's full-year numbers instead of an empty "Heading In" column.
+  if (isWeekOne) {
+    homePregameRows = priorSeasonRows.filter((r) => r.team === game.home_team)
+    awayPregameRows = priorSeasonRows.filter((r) => r.team === game.away_team)
+  }
 
   const homePregameStats = buildStatRow(homePregameRows)
   const awayPregameStats = buildStatRow(awayPregameRows)
@@ -706,7 +732,7 @@ export default function GamePage() {
         awayAbbr={game.away_team}
         homeAbbr={game.home_team}
         windows={[
-          { label: 'Pre-game', away: awayPregameStats, home: homePregameStats },
+          { label: isWeekOne ? `Pre-game (${game.season - 1})` : 'Pre-game', away: awayPregameStats, home: homePregameStats },
           { label: 'Season', away: awaySeasonStats, home: homeSeasonStats },
           { label: 'Game', away: awayGameStatRow, home: homeGameStatRow },
         ]}

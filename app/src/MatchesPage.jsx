@@ -7,6 +7,8 @@ import LoadingSpinner from './LoadingSpinner'
 const SEASONS = [2026, 2025, 2024]
 const DEFAULT_SEASON = 2025
 const REG_WEEKS = Array.from({ length: 18 }, (_, i) => i + 1)
+const REG_WEEKS_ROW1 = REG_WEEKS.slice(0, 9)
+const REG_WEEKS_ROW2 = REG_WEEKS.slice(9)
 const POSTSEASON_TABS = [
   { gameType: 'WC', label: 'WC' },
   { gameType: 'DIV', label: 'DIV' },
@@ -45,7 +47,7 @@ function TeamSide({ abbr, name, score, isWinner, align }) {
         alt={abbr}
         className="h-9 w-9 shrink-0 object-contain"
       />
-      <span className="min-w-0 truncate">
+      <span className="hidden min-w-0 truncate sm:inline">
         <span
           className={`block text-sm font-medium ${
             isWinner
@@ -195,8 +197,20 @@ export default function MatchesPage() {
         ))}
       </div>
 
+      <div className="mb-1.5 flex flex-wrap gap-1.5">
+        {REG_WEEKS_ROW1.map((w) => (
+          <button
+            key={w}
+            type="button"
+            onClick={() => setTab({ kind: 'week', week: w })}
+            className={`${tabBase} ${isActive({ kind: 'week', week: w }) ? tabActive : tabInactive}`}
+          >
+            {w}
+          </button>
+        ))}
+      </div>
       <div className="mb-2 flex flex-wrap gap-1.5">
-        {REG_WEEKS.map((w) => (
+        {REG_WEEKS_ROW2.map((w) => (
           <button
             key={w}
             type="button"
