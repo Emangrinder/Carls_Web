@@ -155,7 +155,7 @@ const STAT_COLUMNS = {
     { key: 'purposeYds', label: 'Purpose Yds', note: 'Rush + receiving + return yards (not passing)' },
     { key: 'tgtPct', label: 'Tgt % Snaps', note: "Targets as a % of this player's own offense snaps" },
     { key: 'carryPct', label: 'Car % Snaps', note: "Carries as a % of this player's own offense snaps" },
-    { key: 'teamTouchPct', label: 'Touch % Team', note: "Carries + targets as a % of the team's total offense snaps" },
+    { key: 'teamTouchPct', label: 'Touch % Team', note: "Carries + targets + pass attempts as a % of the team's total offense snaps" },
     { key: 'offSnapPct', label: 'Off Snap %' },
     OFFENSE_SNAPS_COL,
   ],
@@ -643,7 +643,7 @@ export default function FantasyScoresPage() {
           (s?.rushing_yards ?? 0) + (s?.receiving_yards ?? 0)
           + (spec?.kickoff_return_yards ?? 0) + (spec?.punt_return_yards ?? 0)
         const teamSnaps = teamOffenseSnapsFor(team)
-        const touches = (s?.carries ?? 0) + (s?.targets ?? 0)
+        const touches = (s?.carries ?? 0) + (s?.targets ?? 0) + (s?.attempts ?? 0)
         return {
           purposeYds,
           tgtPct: s?.targets != null && offSnaps ? round2((s.targets / offSnaps) * 100) : null,
