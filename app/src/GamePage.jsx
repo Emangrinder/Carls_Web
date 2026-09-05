@@ -11,6 +11,14 @@ const INJURY_STATUS_STYLES = {
   Doubtful: 'text-orange-600 dark:text-orange-400',
   Questionable: 'text-yellow-600 dark:text-yellow-500',
 }
+// Out first, then Doubtful, then Questionable, then everyone else (no
+// game-status designation) -- anything not listed sorts last.
+const INJURY_STATUS_SORT_ORDER = { Out: 0, Doubtful: 1, Questionable: 2 }
+function sortInjuries(rows) {
+  return [...rows].sort(
+    (a, b) => (INJURY_STATUS_SORT_ORDER[a.report_status] ?? 3) - (INJURY_STATUS_SORT_ORDER[b.report_status] ?? 3),
+  )
+}
 
 function fmtDiff(n) {
   if (n == null) return '—'
@@ -395,8 +403,11 @@ function InjuryList({ abbr, rows, depthRankByPlayerId, snapsByPlayerId }) {
                     <span className="ml-1 text-xs text-neutral-400">{r.position}</span>
                   </span>
                   <span className={`shrink-0 text-xs font-medium ${INJURY_STATUS_STYLES[r.report_status] ?? 'text-neutral-400'}`}>
-                    {r.report_status ?? '—'}
-                    {r.report_primary_injury ? ` (${r.report_primary_injury})` : ''}
+                    {r.report_status
+                      ? `${r.report_status}${r.report_primary_injury ? ` (${r.report_primary_injury})` : ''}`
+                      : snaps
+                        ? `${snaps.total} snaps`
+                        : '—'}
                   </span>
                 </div>
                 <div className="text-[11px] text-neutral-400">
@@ -591,8 +602,8 @@ export default function GamePage() {
   const homeGameStatRow = buildStatRow(homeGameStats ? [homeGameStats] : [])
   const awayGameStatRow = buildStatRow(awayGameStats ? [awayGameStats] : [])
 
-  const homeInjuries = injuries.filter((r) => r.team === game.home_team)
-  const awayInjuries = injuries.filter((r) => r.team === game.away_team)
+  const homeInjuries = sortInjuries(injuries.filter((r) => r.team === game.home_team))
+  const awayInjuries = sortInjuries(injuries.filter((r) => r.team === game.away_team))
 
   // Depth chart rank (current snapshot -- see depth_chart_ranks' own
   // comment, there's no historical version) and season-to-date snap
