@@ -155,7 +155,7 @@ const STAT_COLUMNS = {
     { key: 'purposeYds', label: 'Purpose Yds', note: 'Rush + receiving + return yards (not passing)' },
     { key: 'tgtPct', label: 'Tgt % Snaps', note: "Targets as a % of this player's own offense snaps" },
     { key: 'carryPct', label: 'Car % Snaps', note: "Carries as a % of this player's own offense snaps" },
-    { key: 'teamTouchPct', label: 'Touch % Team', note: "Carries + targets + pass attempts as a % of the team's total offense snaps" },
+    { key: 'teamTouchPct', label: 'All-Touch %', note: "Carries + targets + pass attempts as a % of the team's total offense snaps" },
     { key: 'offSnapPct', label: 'Off Snap %' },
     OFFENSE_SNAPS_COL,
   ],
@@ -1063,27 +1063,27 @@ export default function FantasyScoresPage() {
                   Player
                 </th>
                 <th
-                  className={`${FROZEN_HEADER_TD} cursor-pointer border-b border-neutral-200 px-2 py-2 text-right font-medium hover:text-neutral-900 dark:border-neutral-800 dark:hover:text-neutral-100`}
+                  className={`${FROZEN_HEADER_TD} cursor-pointer border-b border-neutral-200 px-2 py-2 text-right font-medium hover:text-neutral-900 dark:border-neutral-800 dark:hover:text-neutral-100 ${sortKey === 'total' ? 'text-neutral-900 dark:text-neutral-100' : ''}`}
                   style={{ left: COL_LEFT.total, width: COL_WIDTHS.total }}
                   onClick={() => setSortKey('total')}
                 >
-                  Total{sortKey === 'total' ? ' ▾' : ''}
+                  Total
                 </th>
                 <th
-                  className={`${FROZEN_HEADER_TD} cursor-pointer border-b border-neutral-200 px-2 py-2 text-right font-medium hover:text-neutral-900 dark:border-neutral-800 dark:hover:text-neutral-100`}
+                  className={`${FROZEN_HEADER_TD} cursor-pointer border-b border-neutral-200 px-2 py-2 text-right font-medium hover:text-neutral-900 dark:border-neutral-800 dark:hover:text-neutral-100 ${sortKey === 'avg' ? 'text-neutral-900 dark:text-neutral-100' : ''}`}
                   style={{ left: COL_LEFT.avg, width: COL_WIDTHS.avg, ...DIVIDER_STYLE }}
                   onClick={() => setSortKey('avg')}
                 >
-                  Avg{sortKey === 'avg' ? ' ▾' : ''}
+                  Avg
                 </th>
                 {scrollColumns.map((col) => (
                   <th
                     key={col.key}
-                    className={`${HEADER_TH} cursor-pointer border-b border-l border-neutral-200 px-2 py-2 text-right font-medium hover:text-neutral-900 dark:border-neutral-800 dark:hover:text-neutral-100`}
+                    className={`${HEADER_TH} cursor-pointer border-b border-l border-neutral-200 px-2 py-2 text-right font-medium hover:text-neutral-900 dark:border-neutral-800 dark:hover:text-neutral-100 ${sortKey === col.key ? 'text-neutral-900 dark:text-neutral-100' : ''}`}
                     style={{ width: scrollColWidth }}
                     onClick={() => setSortKey(col.key)}
                   >
-                    {col.label}{sortKey === col.key ? ' ▾' : ''}
+                    {col.label}
                   </th>
                 ))}
               </tr>
