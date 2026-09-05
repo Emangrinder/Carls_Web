@@ -211,10 +211,10 @@ function GroupedStatsTable({ rows, groups, sortKey, sortDir, confGroup, onSort, 
     })
   }, [rows, sortKey, sortDir, confGroup, groups])
 
-  // Tint the header by whichever conference is effectively on top --
-  // the explicitly-toggled one if there is one, else whichever
-  // naturally sorts there.
-  const topConference = confGroup ?? sortedRows[0]?.conference
+  // Tint the header only by the explicit NFC/AFC toggle -- gray for
+  // the untoggled full-league state, regardless of which conference
+  // naturally happens to sort to the top in that state.
+  const topConference = confGroup
 
   return (
     <div ref={ref} className="scrollbar-hide overflow-auto" style={{ maxHeight: maxHeight ?? undefined }}>
@@ -350,10 +350,10 @@ function ShareStatsTable({ rows, sortKey, sortDir, confGroup, onSort, onToggleCo
     })
   }, [rows, sortKey, sortDir, confGroup])
 
-  // Tint the header by whichever conference is effectively on top --
-  // the explicitly-toggled one if there is one, else whichever
-  // naturally sorts there.
-  const topConference = confGroup ?? sortedRows[0]?.conference
+  // Tint the header only by the explicit NFC/AFC toggle -- gray for
+  // the untoggled full-league state, regardless of which conference
+  // naturally happens to sort to the top in that state.
+  const topConference = confGroup
 
   return (
     <div ref={ref} className="scrollbar-hide overflow-auto" style={{ maxHeight: maxHeight ?? undefined }}>
