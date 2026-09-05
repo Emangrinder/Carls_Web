@@ -29,30 +29,60 @@ const IDP_POSITIONS = new Set(['DT', 'DE', 'LB', 'CB', 'S'])
 
 // A separate filter dimension from the Weeks/Offense/etc toggles above --
 // narrows whichever leaderboard is currently showing down to one position
-// (or the Skill/IDP position-group buckets). The three team-level roles
-// (Head Coach/Team D/Team O) don't exist as rows anywhere but the Coaching
-// tab, so picking one also jumps the Table Type toggles there (see
-// selectPositionFilter below) instead of just filtering in place.
-const POSITION_FILTERS = [
-  { key: 'all', label: 'All' },
-  { key: 'QB', label: 'QB' },
-  { key: 'Skill', label: 'Skill' },
-  { key: 'RB', label: 'RB' },
-  { key: 'FB', label: 'FB' },
-  { key: 'TE', label: 'TE' },
-  { key: 'WR', label: 'WR' },
-  { key: 'IDP', label: 'IDP' },
-  { key: 'DT', label: 'DT' },
-  { key: 'DE', label: 'DE' },
-  { key: 'LB', label: 'LB' },
-  { key: 'CB', label: 'CB' },
-  { key: 'S', label: 'S' },
-  { key: 'PK', label: 'PK' },
-  { key: 'PN', label: 'PN' },
-  { key: 'HC', label: 'Head Coach' },
-  { key: 'TeamD', label: 'Team D' },
-  { key: 'TeamO', label: 'Team O' },
+// (or the Skill/IDP position-group buckets). Which options are even shown
+// depends on the current Table Type (see positionFiltersFor below): an
+// independent role (Head Coach/Team D/Team O) only offers itself, Offense/
+// Defense only offer their own side's positions, Kicking/Punting only
+// PK/PN, and Returning offers both sides since either can return kicks.
+const ALL_FILTER = { key: 'all', label: 'All' }
+const QB_FILTER = { key: 'QB', label: 'QB' }
+const SKILL_FILTER = { key: 'Skill', label: 'Skill' }
+const RB_FILTER = { key: 'RB', label: 'RB' }
+const FB_FILTER = { key: 'FB', label: 'FB' }
+const TE_FILTER = { key: 'TE', label: 'TE' }
+const WR_FILTER = { key: 'WR', label: 'WR' }
+const IDP_FILTER = { key: 'IDP', label: 'IDP' }
+const DT_FILTER = { key: 'DT', label: 'DT' }
+const DE_FILTER = { key: 'DE', label: 'DE' }
+const LB_FILTER = { key: 'LB', label: 'LB' }
+const CB_FILTER = { key: 'CB', label: 'CB' }
+const S_FILTER = { key: 'S', label: 'S' }
+const PK_FILTER = { key: 'PK', label: 'PK' }
+const PN_FILTER = { key: 'PN', label: 'PN' }
+const HC_FILTER = { key: 'HC', label: 'Head Coach' }
+const TEAM_D_FILTER = { key: 'TeamD', label: 'Team D' }
+const TEAM_O_FILTER = { key: 'TeamO', label: 'Team O' }
+
+const OFFENSE_FILTERS = [ALL_FILTER, QB_FILTER, SKILL_FILTER, RB_FILTER, FB_FILTER, TE_FILTER, WR_FILTER]
+const DEFENSE_FILTERS = [ALL_FILTER, IDP_FILTER, DT_FILTER, DE_FILTER, LB_FILTER, CB_FILTER, S_FILTER]
+const RETURN_FILTERS = [
+  ALL_FILTER, SKILL_FILTER, RB_FILTER, FB_FILTER, TE_FILTER, WR_FILTER,
+  IDP_FILTER, DT_FILTER, DE_FILTER, LB_FILTER, CB_FILTER, S_FILTER,
 ]
+const KICKING_FILTERS = [ALL_FILTER, PK_FILTER]
+const PUNTING_FILTERS = [ALL_FILTER, PN_FILTER]
+const FULL_FILTERS = [
+  ALL_FILTER, QB_FILTER, SKILL_FILTER, RB_FILTER, FB_FILTER, TE_FILTER, WR_FILTER,
+  IDP_FILTER, DT_FILTER, DE_FILTER, LB_FILTER, CB_FILTER, S_FILTER,
+  PK_FILTER, PN_FILTER, HC_FILTER, TEAM_D_FILTER, TEAM_O_FILTER,
+]
+
+function positionFiltersFor(topKey, activeSub) {
+  if (topKey === 'offense') return OFFENSE_FILTERS
+  if (topKey === 'defense') return DEFENSE_FILTERS
+  if (topKey === 'coaching') {
+    if (activeSub === 'coach-head') return [ALL_FILTER, HC_FILTER]
+    if (activeSub === 'coach-offense') return [ALL_FILTER, TEAM_O_FILTER]
+    if (activeSub === 'coach-defense') return [ALL_FILTER, TEAM_D_FILTER]
+  }
+  if (topKey === 'special') {
+    if (activeSub === 'kicking') return KICKING_FILTERS
+    if (activeSub === 'punting') return PUNTING_FILTERS
+    if (activeSub === 'returning') return RETURN_FILTERS
+  }
+  return FULL_FILTERS // Weeks -- everyone's on the same leaderboard there
+}
+
 const TEAM_ROLE_FILTERS = { HC: 'coach-head', TeamD: 'coach-defense', TeamO: 'coach-offense' }
 function matchesPositionFilter(filterKey, normalizedPos) {
   if (filterKey === 'all') return true
@@ -121,7 +151,14 @@ const SPECIAL_SNAPS_COL = { key: 'snaps', label: 'Snaps' }
 // The underlying counting stats shown per leaf category -- these feed
 // that category's fantasy points, per Fantasy Rules.
 const STAT_COLUMNS = {
-  'all-offense': [OFFENSE_SNAPS_COL],
+  'all-offense': [
+    { key: 'purposeYds', label: 'Purpose Yds', note: 'Rush + receiving + return yards (not passing)' },
+    { key: 'tgtPct', label: 'Tgt % Snaps', note: "Targets as a % of this player's own offense snaps" },
+    { key: 'carryPct', label: 'Car % Snaps', note: "Carries as a % of this player's own offense snaps" },
+    { key: 'teamTouchPct', label: 'Touch % Team', note: "Carries + targets as a % of the team's total offense snaps" },
+    { key: 'offSnapPct', label: 'Off Snap %' },
+    OFFENSE_SNAPS_COL,
+  ],
   passing: [
     { key: 'comp', label: 'Comp' },
     { key: 'att', label: 'Att' },
@@ -170,21 +207,21 @@ const STAT_COLUMNS = {
     { key: 'fr', label: 'FR' },
     { key: 'int', label: 'INT' },
     { key: 'defTd', label: 'Def TD' },
-    { key: 'defSnapPct', label: 'Def Snap %' },
+    { key: 'defSnapPct', label: 'D-Sn %' },
     DEFENSE_SNAPS_COL,
   ],
   pressure: [
     { key: 'tfl', label: 'TFL' },
     { key: 'qbHits', label: 'QB Hits' },
     { key: 'sacks', label: 'Sacks' },
-    { key: 'defSnapPct', label: 'Def Snap %' },
+    { key: 'defSnapPct', label: 'D-Sn %' },
     DEFENSE_SNAPS_COL,
   ],
   coverage: [
     { key: 'tkl', label: 'Tackles' },
     { key: 'ast', label: 'Assists' },
     { key: 'pd', label: 'PD' },
-    { key: 'defSnapPct', label: 'Def Snap %' },
+    { key: 'defSnapPct', label: 'D-Sn %' },
     DEFENSE_SNAPS_COL,
   ],
   turnover: [
@@ -193,13 +230,13 @@ const STAT_COLUMNS = {
     { key: 'int', label: 'INT' },
     { key: 'frYds', label: 'FR Yds' },
     { key: 'intYds', label: 'INT Ret Yds' },
-    { key: 'defSnapPct', label: 'Def Snap %' },
+    { key: 'defSnapPct', label: 'D-Sn %' },
     DEFENSE_SNAPS_COL,
   ],
   'defense-td': [
     { key: 'defTd', label: 'Def TD' },
     { key: 'fumbleRetTd', label: 'Fumble Ret TD' },
-    { key: 'defSnapPct', label: 'Def Snap %' },
+    { key: 'defSnapPct', label: 'D-Sn %' },
     DEFENSE_SNAPS_COL,
   ],
   'coach-head': [
@@ -303,6 +340,29 @@ function lastNameOnly(fullName) {
 function round2(n) {
   if (n == null || Number.isNaN(n)) return null
   return Math.round(n * 100) / 100
+}
+
+// Display-only: whatever precision a value was computed/stored at (often
+// hundredths), the table always shows at most one decimal place -- a
+// plain integer count (TD, snaps, etc.) passes through unchanged so it
+// doesn't grow a pointless ".0".
+function fmt1(n) {
+  if (n == null || typeof n !== 'number' || Number.isNaN(n)) return n
+  return Number.isInteger(n) ? n : Math.round(n * 10) / 10
+}
+
+// Heat-map cell shading -- red (low) through yellow to green (high),
+// scaled to wherever this value falls between the column's own min and
+// max (computed only across whatever rows are actually on screen, so it
+// re-centers with the Table Limit/Position filter rather than against the
+// whole league). A semi-transparent overlay keeps text legible in both
+// themes instead of a solid fill.
+function heatColor(value, range) {
+  if (value == null || typeof value !== 'number' || Number.isNaN(value) || !range || range.max === range.min) {
+    return undefined
+  }
+  const t = Math.min(Math.max((value - range.min) / (range.max - range.min), 0), 1)
+  return `hsla(${t * 120}, 75%, 45%, 0.32)`
 }
 
 // PostgREST caps a single response at 1000 rows -- fine for anything
@@ -412,6 +472,7 @@ function ToggleGroupRow({ label, align = 'center', children }) {
 }
 
 export default function FantasyScoresPage() {
+  const [heatMode, setHeatMode] = useState(false)
   const [season, setSeason] = useState(DEFAULT_SEASON)
   const [topKey, setTopKey] = useState('weeks')
   const [subKey, setSubKey] = useState(null)
@@ -544,6 +605,19 @@ export default function FantasyScoresPage() {
     return round2((defSnaps / (t.defense_snaps_avg * t.games_played)) * 100)
   }
 
+  // Same idea, offense side -- also used as the denominator for a team's
+  // total offense snaps (teamOffenseSnapsFor) when computing a player's
+  // touch share of the whole team's offensive plays.
+  function teamOffenseSnapsFor(team) {
+    const t = teamSeasonByAbbr.get(team)
+    return t?.offense_snaps_avg && t?.games_played ? t.offense_snaps_avg * t.games_played : null
+  }
+  function offSnapPctFor(playerId, team) {
+    const offSnaps = snapsByPlayer.get(playerId)?.offense_snaps
+    const teamSnaps = teamOffenseSnapsFor(team)
+    return offSnaps == null || !teamSnaps ? null : round2((offSnaps / teamSnaps) * 100)
+  }
+
   // Standard NFL passer rating (not ESPN's QBR, which needs play-level win-
   // probability data nflverse doesn't publish) -- computed from the same
   // completions/attempts/yards/TD/INT totals already on hand.
@@ -563,7 +637,21 @@ export default function FantasyScoresPage() {
     const defSnapPct = defSnapPctFor(playerId, team)
     switch (category) {
       case 'all-offense': {
-        return offSnaps != null ? { snaps: offSnaps } : null
+        const s = offenseByPlayer.get(playerId)
+        const spec = specialByPlayer.get(playerId)
+        const purposeYds =
+          (s?.rushing_yards ?? 0) + (s?.receiving_yards ?? 0)
+          + (spec?.kickoff_return_yards ?? 0) + (spec?.punt_return_yards ?? 0)
+        const teamSnaps = teamOffenseSnapsFor(team)
+        const touches = (s?.carries ?? 0) + (s?.targets ?? 0)
+        return {
+          purposeYds,
+          tgtPct: s?.targets != null && offSnaps ? round2((s.targets / offSnaps) * 100) : null,
+          carryPct: s?.carries != null && offSnaps ? round2((s.carries / offSnaps) * 100) : null,
+          teamTouchPct: teamSnaps ? round2((touches / teamSnaps) * 100) : null,
+          offSnapPct: offSnapPctFor(playerId, team),
+          snaps: offSnaps,
+        }
       }
       case 'passing': {
         const s = offenseByPlayer.get(playerId)
@@ -709,17 +797,25 @@ export default function FantasyScoresPage() {
   const isCoaching = topKey === 'coaching'
   const activeSub = isWeeks ? null : subKey ?? topCategory.subs[0].key
 
-  // A column sort only makes sense for the columns actually on screen --
-  // reset it whenever the Table Type changes so a stale column key from a
-  // different tab doesn't silently do nothing.
-  useEffect(() => {
-    setSortKey(null)
-  }, [topKey, activeSub])
-
+  // A column sort only makes sense for the columns actually on screen, and
+  // the Position filter's own OPTIONS depend on the Table Type too (see
+  // positionFiltersFor) -- both reset whenever the Table Type is changed
+  // directly (selectTop/selectSub below). selectPositionFilter deliberately
+  // does NOT go through those -- picking a team-role filter changes the
+  // Table Type as a side effect of setting the filter, and resetting the
+  // filter right back to 'all' in response would undo the click.
   function selectTop(key) {
     setTopKey(key)
     const cat = TOP_CATEGORIES.find((c) => c.key === key)
     setSubKey(cat.subs ? cat.subs[0].key : null)
+    setSortKey(null)
+    setPositionFilter('all')
+  }
+
+  function selectSub(key) {
+    setSubKey(key)
+    setSortKey(null)
+    setPositionFilter('all')
   }
 
   // Head Coach/Team D/Team O don't exist as rows anywhere but the Coaching
@@ -728,6 +824,7 @@ export default function FantasyScoresPage() {
   // never just empty because the wrong tab happened to be showing.
   function selectPositionFilter(key) {
     setPositionFilter(key)
+    setSortKey(null)
     if (TEAM_ROLE_FILTERS[key]) {
       setTopKey('coaching')
       setSubKey(TEAM_ROLE_FILTERS[key])
@@ -852,6 +949,27 @@ export default function FantasyScoresPage() {
   // overflow-x-auto have real excess width to scroll.
   const tableWidth = FROZEN_WIDTH + scrollColWidth * scrollColumns.length
 
+  // Per-column min/max for the heat map -- scoped to exactly the rows on
+  // screen (after the row limit and position filter), so it re-centers
+  // with them rather than against the whole league.
+  const heatRanges = useMemo(() => {
+    if (!heatMode) return {}
+    const ranges = {}
+    for (const key of ['total', 'avg', ...scrollColumns.map((c) => c.key)]) {
+      let min = Infinity
+      let max = -Infinity
+      for (const row of displayRows) {
+        const v = sortValueFor(row, key)
+        if (!Number.isFinite(v)) continue
+        if (v < min) min = v
+        if (v > max) max = v
+      }
+      ranges[key] = min <= max ? { min, max } : null
+    }
+    return ranges
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [heatMode, displayRows, scrollColumns])
+
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-6">
       <h1 className="mb-2 text-2xl font-semibold text-neutral-900 dark:text-neutral-100">Fantasy Scores</h1>
@@ -869,6 +987,12 @@ export default function FantasyScoresPage() {
         </code>{' '}
         for the exact list.
       </p>
+
+      <div className="mb-4">
+        <ToggleButton active={heatMode} onClick={() => setHeatMode((v) => !v)}>
+          Heat
+        </ToggleButton>
+      </div>
 
       <ToggleGroupRow label="Year">
         {SEASONS.map((y) => (
@@ -907,7 +1031,7 @@ export default function FantasyScoresPage() {
           {!isWeeks && (
             <div className="flex flex-wrap gap-1.5">
               {topCategory.subs.map((s) => (
-                <ToggleButton key={s.key} active={activeSub === s.key} onClick={() => setSubKey(s.key)} title={s.note}>
+                <ToggleButton key={s.key} active={activeSub === s.key} onClick={() => selectSub(s.key)} title={s.note}>
                   {s.label}
                 </ToggleButton>
               ))}
@@ -917,7 +1041,7 @@ export default function FantasyScoresPage() {
       </ToggleGroupRow>
 
       <ToggleGroupRow label="Position">
-        {POSITION_FILTERS.map((p) => (
+        {positionFiltersFor(topKey, activeSub).map((p) => (
           <ToggleButton key={p.key} active={positionFilter === p.key} onClick={() => selectPositionFilter(p.key)}>
             {p.label}
           </ToggleButton>
@@ -984,46 +1108,48 @@ export default function FantasyScoresPage() {
                     />
                   </td>
                   <td className={`${FROZEN_TD} py-2 pr-2`} style={{ left: COL_LEFT.name, width: COL_WIDTHS.name }}>
-                    <div className="truncate font-medium text-neutral-900 dark:text-neutral-100">
+                    <div className="flex min-w-0 items-baseline gap-1.5 truncate font-medium text-neutral-900 dark:text-neutral-100">
                       {r.isTeam ? (
-                        <Link to={activeSub === 'coach-head' ? `/coach/${r.team}` : `/team/${r.team}`} className="hover:underline">
+                        <Link to={activeSub === 'coach-head' ? `/coach/${r.team}` : `/team/${r.team}`} className="truncate hover:underline">
                           {r.name}
                         </Link>
                       ) : (
-                        <Link to={`/player/${r.playerId}`} className="hover:underline">
+                        <Link to={`/player/${r.playerId}`} className="truncate hover:underline">
                           {lastNameOnly(r.name)}
                         </Link>
                       )}
+                      <span className="shrink-0 text-xs font-normal text-neutral-400">{r.position}</span>
                     </div>
-                    <div className="text-xs text-neutral-400">{r.position}</div>
                   </td>
                   <td
                     className={`${FROZEN_TD} px-2 py-2 text-right font-semibold tabular-nums text-neutral-900 dark:text-neutral-100`}
-                    style={{ left: COL_LEFT.total, width: COL_WIDTHS.total }}
+                    style={{ left: COL_LEFT.total, width: COL_WIDTHS.total, backgroundColor: heatMode ? heatColor(r.total, heatRanges.total) : undefined }}
                   >
-                    {r.total}
+                    {fmt1(r.total)}
                   </td>
                   <td
                     className={`${FROZEN_TD} px-2 py-2 text-right tabular-nums text-neutral-600 dark:text-neutral-400`}
-                    style={{ left: COL_LEFT.avg, width: COL_WIDTHS.avg, ...DIVIDER_STYLE }}
+                    style={{ left: COL_LEFT.avg, width: COL_WIDTHS.avg, ...DIVIDER_STYLE, backgroundColor: heatMode ? heatColor(r.avg, heatRanges.avg) : undefined }}
                   >
-                    {r.avg}
+                    {fmt1(r.avg)}
                   </td>
                   {isWeeks
                     ? WEEKS.map((w) => (
                         <td
                           key={w}
                           className="border-l border-neutral-100 px-2 py-2 text-right tabular-nums text-neutral-600 dark:border-neutral-900 dark:text-neutral-400"
+                          style={{ backgroundColor: heatMode ? heatColor(weekScoresByPlayer.get(r.playerId)?.[w], heatRanges[w]) : undefined }}
                         >
-                          {weekScoresByPlayer.get(r.playerId)?.[w] ?? '—'}
+                          {fmt1(weekScoresByPlayer.get(r.playerId)?.[w]) ?? '—'}
                         </td>
                       ))
                     : scrollColumns.map((col) => (
                         <td
                           key={col.key}
                           className="border-l border-neutral-100 px-2 py-2 text-right tabular-nums text-neutral-600 dark:border-neutral-900 dark:text-neutral-400"
+                          style={{ backgroundColor: heatMode ? heatColor(Number(r.statValues?.[col.key]), heatRanges[col.key]) : undefined }}
                         >
-                          {r.statValues?.[col.key] ?? '—'}
+                          {fmt1(r.statValues?.[col.key]) ?? '—'}
                         </td>
                       ))}
                 </tr>
