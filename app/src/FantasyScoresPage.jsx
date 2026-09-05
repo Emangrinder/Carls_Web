@@ -4,31 +4,55 @@ const SEASONS = [2026, 2025, 2024]
 const DEFAULT_SEASON = 2025
 const WEEKS = Array.from({ length: 18 }, (_, i) => i + 1)
 
-// Which rule-set the table is currently showing. "Season" is the special
-// week-by-week fantasy-points view; every other button swaps the columns
-// after Total/Avg to that category's own underlying counting stats
-// instead. These categories aren't identical to the Fantasy Rules page's
-// tags -- Defense is split into the three sub-components the league
-// actually compares (pressure/coverage/turnovers), and Kicking folds in
-// Punting since both are the same lone specialist roster slot.
-const SCORE_CATEGORIES = [
-  { key: 'season', label: 'Season', mode: 'weeks' },
-  { key: 'passing', label: 'Passing', mode: 'stats' },
-  { key: 'rushing-receiving', label: 'Rushing/Receiving', mode: 'stats' },
-  { key: 'defense-all', label: 'All Defense', mode: 'stats' },
-  { key: 'defense-pressure', label: 'Defense Pressure', mode: 'stats', note: 'TFL, QB Hits, Sacks' },
-  { key: 'defense-coverage', label: 'Defense Coverage', mode: 'stats', note: 'Tackles, Assist Tackles, PDs' },
-  { key: 'defense-turnovers', label: 'Defense Turnovers', mode: 'stats', note: 'FF, FR, INT, FR Yds, INT Ret Yds' },
-  { key: 'kicking', label: 'Kicking', mode: 'stats', note: 'Includes punting' },
-  { key: 'returning', label: 'Returning', mode: 'stats' },
-  { key: 'blocking-bonus', label: 'Blocking Bonus', mode: 'stats' },
-  { key: 'coach', label: 'Coach', mode: 'stats' },
-  { key: 'team-defense', label: 'Team Defense', mode: 'stats' },
-  { key: 'team-offense', label: 'Team Offense', mode: 'stats' },
+// Two-level toggle: pick a top-level group, then (for anything but Weeks)
+// which of its rule-sets to view. Each leaf's key is what MOCK_ROWS.category
+// and STAT_COLUMNS are keyed by. "Coaching > Defense/Offense" are the team-
+// level Defensive/Offensive Coordinator stats, not the individual IDP
+// Defense group -- kept as coach-defense/coach-offense so they don't
+// collide with the top-level Defense group's own leaves.
+const TOP_CATEGORIES = [
+  { key: 'weeks', label: 'Weeks' },
+  {
+    key: 'offense',
+    label: 'Offense',
+    subs: [
+      { key: 'passing', label: 'Passing' },
+      { key: 'receiving', label: 'Receiving' },
+      { key: 'rushing', label: 'Rushing' },
+      { key: 'blocking-bonus', label: 'Blocking Bonus' },
+    ],
+  },
+  {
+    key: 'defense',
+    label: 'Defense',
+    subs: [
+      { key: 'pressure', label: 'Pressure', note: 'TFL, QB Hits, Sacks' },
+      { key: 'coverage', label: 'Coverage', note: 'Tackles, Assist Tackles, PDs' },
+      { key: 'turnover', label: 'Turnover', note: 'FF, FR, INT, FR Yds, INT Ret Yds' },
+    ],
+  },
+  {
+    key: 'coaching',
+    label: 'Coaching',
+    subs: [
+      { key: 'coach-head', label: 'Head' },
+      { key: 'coach-defense', label: 'Defense' },
+      { key: 'coach-offense', label: 'Offense' },
+    ],
+  },
+  {
+    key: 'special',
+    label: 'Special',
+    subs: [
+      { key: 'kicking', label: 'Kicking' },
+      { key: 'punting', label: 'Punting' },
+      { key: 'returning', label: 'Returning' },
+    ],
+  },
 ]
 
-// The underlying counting stats shown per category once "Season" isn't
-// selected -- these feed that category's fantasy points, per Fantasy Rules.
+// The underlying counting stats shown per leaf category -- these feed
+// that category's fantasy points, per Fantasy Rules.
 const STAT_COLUMNS = {
   passing: [
     { key: 'comp', label: 'Comp' },
@@ -37,46 +61,67 @@ const STAT_COLUMNS = {
     { key: 'td', label: 'TD' },
     { key: 'int', label: 'INT' },
   ],
-  'rushing-receiving': [
-    { key: 'rushAtt', label: 'Rush Att' },
-    { key: 'rushYds', label: 'Rush Yds' },
-    { key: 'rushTd', label: 'Rush TD' },
+  receiving: [
     { key: 'rec', label: 'Rec' },
-    { key: 'recYds', label: 'Rec Yds' },
-    { key: 'recTd', label: 'Rec TD' },
+    { key: 'targets', label: 'Targets' },
+    { key: 'yds', label: 'Yds' },
+    { key: 'td', label: 'TD' },
   ],
-  'defense-all': [
-    { key: 'tkl', label: 'Tackles' },
-    { key: 'ast', label: 'Assists' },
-    { key: 'sacks', label: 'Sacks' },
+  rushing: [
+    { key: 'att', label: 'Att' },
+    { key: 'yds', label: 'Yds' },
+    { key: 'td', label: 'TD' },
+  ],
+  'blocking-bonus': [
+    { key: 'avgPassComp', label: 'Avg/Comp' },
+    { key: 'avgRush', label: 'Avg/Rush' },
+    { key: 'rushAtt', label: 'Rush Att' },
+    { key: 'avgRec', label: 'Avg/Rec' },
+  ],
+  pressure: [
     { key: 'tfl', label: 'TFL' },
     { key: 'qbHits', label: 'QB Hits' },
-    { key: 'int', label: 'INT' },
-    { key: 'pd', label: 'PD' },
-    { key: 'ff', label: 'FF' },
-    { key: 'fr', label: 'FR' },
-  ],
-  'defense-pressure': [
-    { key: 'tfl', label: 'TFL' },
-    { key: 'qbHits', label: 'QB Hits' },
     { key: 'sacks', label: 'Sacks' },
   ],
-  'defense-coverage': [
+  coverage: [
     { key: 'tkl', label: 'Tackles' },
     { key: 'ast', label: 'Assists' },
     { key: 'pd', label: 'PD' },
   ],
-  'defense-turnovers': [
+  turnover: [
     { key: 'ff', label: 'FF' },
     { key: 'fr', label: 'FR' },
     { key: 'int', label: 'INT' },
     { key: 'frYds', label: 'FR Yds' },
     { key: 'intYds', label: 'INT Ret Yds' },
   ],
+  'coach-head': [
+    { key: 'won', label: 'Won' },
+    { key: 'lost', label: 'Lost' },
+    { key: 'tied', label: 'Tied' },
+    { key: 'ptDiff', label: 'Pt Diff' },
+  ],
+  'coach-defense': [
+    { key: 'oppPassTd', label: 'Opp Pass TD' },
+    { key: 'oppRushTd', label: 'Opp Rush TD' },
+    { key: 'sacks', label: 'Sacks' },
+    { key: 'int', label: 'INT' },
+    { key: 'passYdsAllowed', label: 'Pass Yds Allowed' },
+    { key: 'rushYdsAllowed', label: 'Rush Yds Allowed' },
+  ],
+  'coach-offense': [
+    { key: 'passTd', label: 'Pass TD' },
+    { key: 'rushTd', label: 'Rush TD' },
+    { key: 'fgMade', label: 'FG Made' },
+    { key: 'firstDowns', label: 'First Downs' },
+    { key: 'fumblesLost', label: 'Fumbles Lost' },
+  ],
   kicking: [
     { key: 'fgMade', label: 'FG Made' },
     { key: 'fgAtt', label: 'FG Att' },
     { key: 'xpMade', label: 'XP Made' },
+  ],
+  punting: [
     { key: 'punts', label: 'Punts' },
     { key: 'puntYds', label: 'Punt Yds' },
     { key: 'puntAvg', label: 'Punt Avg' },
@@ -87,57 +132,30 @@ const STAT_COLUMNS = {
     { key: 'pr', label: 'PR' },
     { key: 'prYds', label: 'PR Yds' },
   ],
-  'blocking-bonus': [
-    { key: 'avgPassComp', label: 'Avg/Comp' },
-    { key: 'avgRush', label: 'Avg/Rush' },
-    { key: 'rushAtt', label: 'Rush Att' },
-    { key: 'avgRec', label: 'Avg/Rec' },
-  ],
-  coach: [
-    { key: 'won', label: 'Won' },
-    { key: 'lost', label: 'Lost' },
-    { key: 'tied', label: 'Tied' },
-    { key: 'ptDiff', label: 'Pt Diff' },
-  ],
-  'team-defense': [
-    { key: 'oppPassTd', label: 'Opp Pass TD' },
-    { key: 'oppRushTd', label: 'Opp Rush TD' },
-    { key: 'sacks', label: 'Sacks' },
-    { key: 'int', label: 'INT' },
-    { key: 'passYdsAllowed', label: 'Pass Yds Allowed' },
-    { key: 'rushYdsAllowed', label: 'Rush Yds Allowed' },
-  ],
-  'team-offense': [
-    { key: 'passTd', label: 'Pass TD' },
-    { key: 'rushTd', label: 'Rush TD' },
-    { key: 'fgMade', label: 'FG Made' },
-    { key: 'firstDowns', label: 'First Downs' },
-    { key: 'fumblesLost', label: 'Fumbles Lost' },
-  ],
 }
 
 // Preview-only mock rows -- there's no fantasy-scoring database yet (the
 // real version needs a new table built from the Fantasy Rules formulas,
 // generalized across whichever roster position actually recorded each
 // event). Just enough here to see the shape of the table before that
-// work happens. `category` is which SCORE_CATEGORIES button surfaces this
-// row -- "defense-all" matches any category starting with "defense-".
-// `isTeam` rows (Team Defense/Offense) show the full team name, not a
-// player's last name.
+// work happens. `category` is the leaf key from TOP_CATEGORIES[*].subs
+// that surfaces this row. `isTeam` rows (Coaching > Defense/Offense) show
+// the full team name, not a player's last name.
 const MOCK_ROWS = [
   { name: 'Josh Allen', legalPosition: 'QB', team: 'BUF', category: 'passing', seasonAvg: 24.8 },
-  { name: 'Saquon Barkley', legalPosition: 'IDP/Skill', team: 'PHI', category: 'rushing-receiving', seasonAvg: 21.3 },
-  { name: "Ja'Marr Chase", legalPosition: 'IDP/Skill', team: 'CIN', category: 'rushing-receiving', seasonAvg: 19.6 },
-  { name: 'Travis Kelce', legalPosition: 'IDP/Skill', team: 'KC', category: 'rushing-receiving', seasonAvg: 15.2 },
-  { name: 'Myles Garrett', legalPosition: 'IDP/Skill', team: 'CLE', category: 'defense-pressure', seasonAvg: 12.7 },
-  { name: 'Fred Warner', legalPosition: 'IDP/Skill', team: 'SF', category: 'defense-coverage', seasonAvg: 13.9 },
-  { name: 'Patrick Surtain II', legalPosition: 'IDP/Skill', team: 'DEN', category: 'defense-turnovers', seasonAvg: 11.1 },
-  { name: 'Justin Tucker', legalPosition: 'PK', team: 'BAL', category: 'kicking', seasonAvg: 9.4 },
-  { name: 'KaVontae Turpin', legalPosition: 'IDP/Skill', team: 'DAL', category: 'returning', seasonAvg: 8.2 },
+  { name: 'Saquon Barkley', legalPosition: 'IDP/Skill', team: 'PHI', category: 'rushing', seasonAvg: 21.3 },
+  { name: "Ja'Marr Chase", legalPosition: 'IDP/Skill', team: 'CIN', category: 'receiving', seasonAvg: 19.6 },
+  { name: 'Travis Kelce', legalPosition: 'IDP/Skill', team: 'KC', category: 'receiving', seasonAvg: 15.2 },
   { name: 'Kyle Juszczyk', legalPosition: 'IDP/Skill', team: 'SF', category: 'blocking-bonus', seasonAvg: 4.3 },
-  { name: 'Andy Reid', legalPosition: 'Head Coach', team: 'KC', category: 'coach', seasonAvg: 6.1 },
-  { name: 'Buffalo Bills', legalPosition: 'Def', team: 'BUF', category: 'team-defense', seasonAvg: 14.2, isTeam: true },
-  { name: 'Kansas City Chiefs', legalPosition: 'ST', team: 'KC', category: 'team-offense', seasonAvg: 16.8, isTeam: true },
+  { name: 'Myles Garrett', legalPosition: 'IDP/Skill', team: 'CLE', category: 'pressure', seasonAvg: 12.7 },
+  { name: 'Fred Warner', legalPosition: 'IDP/Skill', team: 'SF', category: 'coverage', seasonAvg: 13.9 },
+  { name: 'Patrick Surtain II', legalPosition: 'IDP/Skill', team: 'DEN', category: 'turnover', seasonAvg: 11.1 },
+  { name: 'Andy Reid', legalPosition: 'Head Coach', team: 'KC', category: 'coach-head', seasonAvg: 6.1 },
+  { name: 'Buffalo Bills', legalPosition: 'Def', team: 'BUF', category: 'coach-defense', seasonAvg: 14.2, isTeam: true },
+  { name: 'Kansas City Chiefs', legalPosition: 'ST', team: 'KC', category: 'coach-offense', seasonAvg: 16.8, isTeam: true },
+  { name: 'Justin Tucker', legalPosition: 'PK', team: 'BAL', category: 'kicking', seasonAvg: 9.4 },
+  { name: 'AJ Cole', legalPosition: 'PN', team: 'LV', category: 'punting', seasonAvg: 7.6 },
+  { name: 'KaVontae Turpin', legalPosition: 'IDP/Skill', team: 'DAL', category: 'returning', seasonAvg: 8.2 },
 ]
 
 function lastNameOnly(fullName) {
@@ -171,16 +189,40 @@ const FROZEN_WIDTH = COL_LEFT.avg + COL_WIDTHS.avg
 const FROZEN_TD = 'sticky z-10 bg-neutral-50 dark:bg-neutral-900'
 const DIVIDER_STYLE = { borderRight: '1px solid rgba(120,120,120,0.25)' }
 
+function ToggleButton({ active, onClick, children, title }) {
+  return (
+    <button
+      type="button"
+      title={title}
+      onClick={onClick}
+      className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+        active
+          ? 'bg-neutral-900 text-white dark:bg-white dark:text-neutral-900'
+          : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-700'
+      }`}
+    >
+      {children}
+    </button>
+  )
+}
+
 export default function FantasyScoresPage() {
   const [season, setSeason] = useState(DEFAULT_SEASON)
-  const [category, setCategory] = useState(SCORE_CATEGORIES[0].key)
+  const [topKey, setTopKey] = useState('weeks')
+  const [subKey, setSubKey] = useState(null)
 
-  const activeCategory = SCORE_CATEGORIES.find((c) => c.key === category)
-  const rows =
-    category === 'season'
-      ? MOCK_ROWS
-      : MOCK_ROWS.filter((r) => (category === 'defense-all' ? r.category.startsWith('defense-') : r.category === category))
-  const scrollColumns = activeCategory.mode === 'weeks' ? WEEKS.map((w) => ({ key: w, label: `Wk ${w}` })) : STAT_COLUMNS[category]
+  const topCategory = TOP_CATEGORIES.find((c) => c.key === topKey)
+  const isWeeks = topKey === 'weeks'
+  const activeSub = isWeeks ? null : subKey ?? topCategory.subs[0].key
+
+  function selectTop(key) {
+    setTopKey(key)
+    const cat = TOP_CATEGORIES.find((c) => c.key === key)
+    setSubKey(cat.subs ? cat.subs[0].key : null)
+  }
+
+  const rows = isWeeks ? MOCK_ROWS : MOCK_ROWS.filter((r) => r.category === activeSub)
+  const scrollColumns = isWeeks ? WEEKS.map((w) => ({ key: w, label: `Wk ${w}` })) : STAT_COLUMNS[activeSub]
   // table-layout:fixed alone doesn't stop a <table> shrinking below the
   // sum of its declared column widths to fit its container -- an explicit
   // total width forces it, which is what makes the wrapper's
@@ -217,23 +259,24 @@ export default function FantasyScoresPage() {
         ))}
       </div>
 
-      <div className="mb-4 flex flex-wrap gap-1.5">
-        {SCORE_CATEGORIES.map((c) => (
-          <button
-            key={c.key}
-            type="button"
-            title={c.note}
-            onClick={() => setCategory(c.key)}
-            className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-              category === c.key
-                ? 'bg-neutral-900 text-white dark:bg-white dark:text-neutral-900'
-                : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-700'
-            }`}
-          >
+      <div className="mb-1.5 flex flex-wrap gap-1.5">
+        {TOP_CATEGORIES.map((c) => (
+          <ToggleButton key={c.key} active={topKey === c.key} onClick={() => selectTop(c.key)}>
             {c.label}
-          </button>
+          </ToggleButton>
         ))}
       </div>
+
+      {!isWeeks && (
+        <div className="mb-4 flex flex-wrap gap-1.5">
+          {topCategory.subs.map((s) => (
+            <ToggleButton key={s.key} active={activeSub === s.key} onClick={() => setSubKey(s.key)} title={s.note}>
+              {s.label}
+            </ToggleButton>
+          ))}
+        </div>
+      )}
+      {isWeeks && <div className="mb-4" />}
 
       <div className="mb-4 rounded border border-yellow-300 bg-yellow-50 px-3 py-2 text-xs text-yellow-800 dark:border-yellow-800 dark:bg-yellow-950/30 dark:text-yellow-400">
         Preview data below -- not real scores yet.
@@ -275,7 +318,7 @@ export default function FantasyScoresPage() {
               </tr>
             )}
             {rows.map((r, i) => {
-              const weekScores = activeCategory.mode === 'weeks' ? WEEKS.map((w) => mockWeekScore(i + 1, w)) : null
+              const weekScores = isWeeks ? WEEKS.map((w) => mockWeekScore(i + 1, w)) : null
               const total = weekScores
                 ? Math.round(weekScores.reduce((a, b) => a + b, 0) * 10) / 10
                 : Math.round(r.seasonAvg * 17 * 10) / 10
@@ -306,7 +349,7 @@ export default function FantasyScoresPage() {
                   >
                     {r.seasonAvg}
                   </td>
-                  {activeCategory.mode === 'weeks'
+                  {isWeeks
                     ? weekScores.map((s, wi) => (
                         <td key={wi} className="px-2 py-2 text-right tabular-nums text-neutral-600 dark:text-neutral-400">
                           {s}
