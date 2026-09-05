@@ -89,6 +89,7 @@ const TOP_CATEGORIES = [
       { key: 'pressure', label: 'Pressure', note: 'TFL, QB Hits, Sacks' },
       { key: 'coverage', label: 'Coverage', note: 'Tackles, Assist Tackles, PDs' },
       { key: 'turnover', label: 'Turnover', note: 'FF, FR, INT, FR Yds, INT Ret Yds' },
+      { key: 'defense-td', label: 'Touchdowns', note: 'Ranked by defensive TDs, not fantasy points' },
     ],
   },
   {
@@ -125,20 +126,29 @@ const STAT_COLUMNS = {
     { key: 'comp', label: 'Comp' },
     { key: 'att', label: 'Att' },
     { key: 'yds', label: 'Yds' },
+    { key: 'ydsPerComp', label: 'Yds/Comp' },
+    { key: 'ydsPerAtt', label: 'Yds/Att' },
     { key: 'td', label: 'TD' },
     { key: 'int', label: 'INT' },
+    { key: 'sacksAgainst', label: 'Sacks Against' },
+    { key: 'qbHitsAgainst', label: 'QB Hits Against' },
+    { key: 'rating', label: 'Rating' },
     OFFENSE_SNAPS_COL,
   ],
   receiving: [
     { key: 'rec', label: 'Rec' },
     { key: 'targets', label: 'Targets' },
     { key: 'yds', label: 'Yds' },
+    { key: 'ydsPerTarget', label: 'Yds/Tgt' },
+    { key: 'ydsPerRec', label: 'Yds/Rec' },
     { key: 'td', label: 'TD' },
+    { key: 'tgtPct', label: 'Tgt % of Snaps' },
     OFFENSE_SNAPS_COL,
   ],
   rushing: [
     { key: 'att', label: 'Att' },
     { key: 'yds', label: 'Yds' },
+    { key: 'ypc', label: 'Yds/Car' },
     { key: 'td', label: 'TD' },
     OFFENSE_SNAPS_COL,
   ],
@@ -149,17 +159,32 @@ const STAT_COLUMNS = {
     { key: 'avgRec', label: 'Avg/Rec' },
     OFFENSE_SNAPS_COL,
   ],
-  'all-defense': [DEFENSE_SNAPS_COL],
+  'all-defense': [
+    { key: 'tfl', label: 'TFL' },
+    { key: 'qbHits', label: 'QB Hits' },
+    { key: 'sacks', label: 'Sacks' },
+    { key: 'tkl', label: 'Tackles' },
+    { key: 'ast', label: 'Assists' },
+    { key: 'pd', label: 'PD' },
+    { key: 'ff', label: 'FF' },
+    { key: 'fr', label: 'FR' },
+    { key: 'int', label: 'INT' },
+    { key: 'defTd', label: 'Def TD' },
+    { key: 'defSnapPct', label: 'Def Snap %' },
+    DEFENSE_SNAPS_COL,
+  ],
   pressure: [
     { key: 'tfl', label: 'TFL' },
     { key: 'qbHits', label: 'QB Hits' },
     { key: 'sacks', label: 'Sacks' },
+    { key: 'defSnapPct', label: 'Def Snap %' },
     DEFENSE_SNAPS_COL,
   ],
   coverage: [
     { key: 'tkl', label: 'Tackles' },
     { key: 'ast', label: 'Assists' },
     { key: 'pd', label: 'PD' },
+    { key: 'defSnapPct', label: 'Def Snap %' },
     DEFENSE_SNAPS_COL,
   ],
   turnover: [
@@ -168,6 +193,13 @@ const STAT_COLUMNS = {
     { key: 'int', label: 'INT' },
     { key: 'frYds', label: 'FR Yds' },
     { key: 'intYds', label: 'INT Ret Yds' },
+    { key: 'defSnapPct', label: 'Def Snap %' },
+    DEFENSE_SNAPS_COL,
+  ],
+  'defense-td': [
+    { key: 'defTd', label: 'Def TD' },
+    { key: 'fumbleRetTd', label: 'Fumble Ret TD' },
+    { key: 'defSnapPct', label: 'Def Snap %' },
     DEFENSE_SNAPS_COL,
   ],
   'coach-head': [
@@ -175,6 +207,12 @@ const STAT_COLUMNS = {
     { key: 'lost', label: 'Lost' },
     { key: 'tied', label: 'Tied' },
     { key: 'ptDiff', label: 'Pt Diff' },
+    { key: 'ydDiff', label: 'Yd Diff' },
+    { key: 'offTd', label: 'Off TD' },
+    { key: 'defTd', label: 'Def TD' },
+    { key: 'stTd', label: 'ST TD' },
+    { key: 'fgMade', label: 'FG Made' },
+    { key: 'stYds', label: 'ST Yds' },
   ],
   'coach-defense': [
     { key: 'oppPassTd', label: 'Opp Pass TD' },
@@ -195,19 +233,31 @@ const STAT_COLUMNS = {
     { key: 'fgMade', label: 'FG Made' },
     { key: 'fgAtt', label: 'FG Att' },
     { key: 'xpMade', label: 'XP Made' },
+    { key: 'fg0_19', label: '0-19' },
+    { key: 'fg20_29', label: '20-29' },
+    { key: 'fg30_39', label: '30-39' },
+    { key: 'fg40_49', label: '40-49' },
+    { key: 'fg50_59', label: '50-59' },
+    { key: 'fg60', label: '60+' },
+    { key: 'fg70', label: '70+' },
     SPECIAL_SNAPS_COL,
   ],
   punting: [
     { key: 'punts', label: 'Punts' },
     { key: 'puntYds', label: 'Punt Yds' },
     { key: 'puntAvg', label: 'Punt Avg' },
+    { key: 'in20', label: 'In 20' },
+    { key: 'returnedPct', label: '% Returned' },
     SPECIAL_SNAPS_COL,
   ],
   returning: [
     { key: 'kr', label: 'KR' },
     { key: 'krYds', label: 'KR Yds' },
+    { key: 'krAvg', label: 'KR Avg' },
     { key: 'pr', label: 'PR' },
     { key: 'prYds', label: 'PR Yds' },
+    { key: 'prAvg', label: 'PR Avg' },
+    { key: 'stTd', label: 'ST TD' },
     SPECIAL_SNAPS_COL,
   ],
 }
@@ -426,7 +476,7 @@ export default function FantasyScoresPage() {
       sumByPlayer(offenseStats, [
         'completions', 'attempts', 'passing_yards', 'passing_tds', 'passing_interceptions',
         'carries', 'rushing_yards', 'rushing_tds', 'receptions', 'targets', 'receiving_yards',
-        'receiving_tds',
+        'receiving_tds', 'sacks_suffered',
       ]),
     [offenseStats],
   )
@@ -435,7 +485,7 @@ export default function FantasyScoresPage() {
       sumByPlayer(defenseStats, [
         'def_tackles_for_loss', 'def_qb_hits', 'def_sacks', 'def_tackles_solo',
         'def_tackles_with_assist', 'def_pass_defended', 'def_fumbles_forced', 'fumble_recovery_opp',
-        'def_interceptions', 'fumble_recovery_yards_opp',
+        'def_interceptions', 'fumble_recovery_yards_opp', 'def_tds', 'fumble_recovery_tds',
       ]),
     [defenseStats],
   )
@@ -443,7 +493,9 @@ export default function FantasyScoresPage() {
     () =>
       sumByPlayer(specialStats, [
         'fg_made', 'fg_att', 'pat_made', 'pt_att', 'pt_yards', 'kickoff_returns',
-        'kickoff_return_yards', 'punt_returns', 'punt_return_yards',
+        'kickoff_return_yards', 'punt_returns', 'punt_return_yards', 'pt_inside_20', 'pt_returned',
+        'special_teams_tds', 'fg_made_0_19', 'fg_made_20_29', 'fg_made_30_39', 'fg_made_40_49',
+        'fg_made_50_59', 'fg_made_60_', 'fg_made_70_',
       ]),
     [specialStats],
   )
@@ -474,25 +526,67 @@ export default function FantasyScoresPage() {
     )
   }
 
+  // Player's share of their team's total defensive snaps that season --
+  // team_season_stats only stores a per-game average, so the season total
+  // is reconstructed as avg * games_played (a small rounding approximation,
+  // since the avg itself is already rounded).
+  function defSnapPctFor(playerId, team) {
+    const defSnaps = snapsByPlayer.get(playerId)?.defense_snaps
+    const t = teamSeasonByAbbr.get(team)
+    if (defSnaps == null || !t?.defense_snaps_avg || !t?.games_played) return null
+    return round2((defSnaps / (t.defense_snaps_avg * t.games_played)) * 100)
+  }
+
+  // Standard NFL passer rating (not ESPN's QBR, which needs play-level win-
+  // probability data nflverse doesn't publish) -- computed from the same
+  // completions/attempts/yards/TD/INT totals already on hand.
+  function passerRating(s) {
+    if (!s.attempts) return null
+    const a = Math.min(Math.max((s.completions / s.attempts - 0.3) * 5, 0), 2.375)
+    const b = Math.min(Math.max((s.passing_yards / s.attempts - 3) * 0.25, 0), 2.375)
+    const c = Math.min(Math.max((s.passing_tds / s.attempts) * 20, 0), 2.375)
+    const d = Math.min(Math.max(2.375 - (s.passing_interceptions / s.attempts) * 25, 0), 2.375)
+    return round2(((a + b + c + d) / 6) * 100)
+  }
+
   function statValuesFor(category, playerId, team) {
     const offSnaps = snapsByPlayer.get(playerId)?.offense_snaps
     const defSnaps = snapsByPlayer.get(playerId)?.defense_snaps
     const stSnaps = snapsByPlayer.get(playerId)?.st_snaps
+    const defSnapPct = defSnapPctFor(playerId, team)
     switch (category) {
       case 'all-offense': {
         return offSnaps != null ? { snaps: offSnaps } : null
       }
       case 'passing': {
         const s = offenseByPlayer.get(playerId)
-        return s && { comp: s.completions, att: s.attempts, yds: s.passing_yards, td: s.passing_tds, int: s.passing_interceptions, snaps: offSnaps }
+        if (!s) return null
+        const teamStats = teamSeasonByAbbr.get(team)
+        return {
+          comp: s.completions, att: s.attempts, yds: s.passing_yards,
+          ydsPerComp: s.completions ? round2(s.passing_yards / s.completions) : 0,
+          ydsPerAtt: s.attempts ? round2(s.passing_yards / s.attempts) : 0,
+          td: s.passing_tds, int: s.passing_interceptions,
+          sacksAgainst: s.sacks_suffered, qbHitsAgainst: teamStats?.qb_hits_allowed ?? null,
+          rating: passerRating(s), snaps: offSnaps,
+        }
       }
       case 'receiving': {
         const s = offenseByPlayer.get(playerId)
-        return s && { rec: s.receptions, targets: s.targets, yds: s.receiving_yards, td: s.receiving_tds, snaps: offSnaps }
+        return (
+          s && {
+            rec: s.receptions, targets: s.targets, yds: s.receiving_yards,
+            ydsPerTarget: s.targets ? round2(s.receiving_yards / s.targets) : 0,
+            ydsPerRec: s.receptions ? round2(s.receiving_yards / s.receptions) : 0,
+            td: s.receiving_tds,
+            tgtPct: offSnaps ? round2((s.targets / offSnaps) * 100) : null,
+            snaps: offSnaps,
+          }
+        )
       }
       case 'rushing': {
         const s = offenseByPlayer.get(playerId)
-        return s && { att: s.carries, yds: s.rushing_yards, td: s.rushing_tds, snaps: offSnaps }
+        return s && { att: s.carries, yds: s.rushing_yards, ypc: s.carries ? round2(s.rushing_yards / s.carries) : 0, td: s.rushing_tds, snaps: offSnaps }
       }
       case 'blocking-bonus': {
         const s = offenseByPlayer.get(playerId)
@@ -506,40 +600,81 @@ export default function FantasyScoresPage() {
         }
       }
       case 'all-defense': {
-        return defSnaps != null ? { snaps: defSnaps } : null
+        const s = defenseByPlayer.get(playerId)
+        return (
+          s && {
+            tfl: s.def_tackles_for_loss, qbHits: s.def_qb_hits, sacks: s.def_sacks,
+            tkl: s.def_tackles_solo, ast: s.def_tackles_with_assist, pd: s.def_pass_defended,
+            ff: s.def_fumbles_forced, fr: s.fumble_recovery_opp, int: s.def_interceptions,
+            defTd: s.def_tds, defSnapPct, snaps: defSnaps,
+          }
+        )
       }
       case 'pressure': {
         const s = defenseByPlayer.get(playerId)
-        return s && { tfl: s.def_tackles_for_loss, qbHits: s.def_qb_hits, sacks: s.def_sacks, snaps: defSnaps }
+        return s && { tfl: s.def_tackles_for_loss, qbHits: s.def_qb_hits, sacks: s.def_sacks, defSnapPct, snaps: defSnaps }
       }
       case 'coverage': {
         const s = defenseByPlayer.get(playerId)
-        return s && { tkl: s.def_tackles_solo, ast: s.def_tackles_with_assist, pd: s.def_pass_defended, snaps: defSnaps }
+        return s && { tkl: s.def_tackles_solo, ast: s.def_tackles_with_assist, pd: s.def_pass_defended, defSnapPct, snaps: defSnaps }
       }
       case 'turnover': {
         const s = defenseByPlayer.get(playerId)
         return (
           s && {
             ff: s.def_fumbles_forced, fr: s.fumble_recovery_opp, int: s.def_interceptions,
-            frYds: s.fumble_recovery_yards_opp, intYds: s.def_interception_yards, snaps: defSnaps,
+            frYds: s.fumble_recovery_yards_opp, intYds: s.def_interception_yards, defSnapPct, snaps: defSnaps,
           }
         )
       }
+      case 'defense-td': {
+        const s = defenseByPlayer.get(playerId)
+        return s && { defTd: s.def_tds, fumbleRetTd: s.fumble_recovery_tds, defSnapPct, snaps: defSnaps }
+      }
       case 'kicking': {
         const s = specialByPlayer.get(playerId)
-        return s && { fgMade: s.fg_made, fgAtt: s.fg_att, xpMade: s.pat_made, snaps: stSnaps }
+        return (
+          s && {
+            fgMade: s.fg_made, fgAtt: s.fg_att, xpMade: s.pat_made,
+            fg0_19: s.fg_made_0_19, fg20_29: s.fg_made_20_29, fg30_39: s.fg_made_30_39,
+            fg40_49: s.fg_made_40_49, fg50_59: s.fg_made_50_59, fg60: s.fg_made_60_, fg70: s.fg_made_70_,
+            snaps: stSnaps,
+          }
+        )
       }
       case 'punting': {
         const s = specialByPlayer.get(playerId)
-        return s && { punts: s.pt_att, puntYds: s.pt_yards, puntAvg: s.pt_att ? round2(s.pt_yards / s.pt_att) : 0, snaps: stSnaps }
+        return (
+          s && {
+            punts: s.pt_att, puntYds: s.pt_yards, puntAvg: s.pt_att ? round2(s.pt_yards / s.pt_att) : 0,
+            in20: s.pt_inside_20, returnedPct: s.pt_att ? round2((s.pt_returned / s.pt_att) * 100) : 0,
+            snaps: stSnaps,
+          }
+        )
       }
       case 'returning': {
         const s = specialByPlayer.get(playerId)
-        return s && { kr: s.kickoff_returns, krYds: s.kickoff_return_yards, pr: s.punt_returns, prYds: s.punt_return_yards, snaps: stSnaps }
+        return (
+          s && {
+            kr: s.kickoff_returns, krYds: s.kickoff_return_yards,
+            krAvg: s.kickoff_returns ? round2(s.kickoff_return_yards / s.kickoff_returns) : 0,
+            pr: s.punt_returns, prYds: s.punt_return_yards,
+            prAvg: s.punt_returns ? round2(s.punt_return_yards / s.punt_returns) : 0,
+            stTd: s.special_teams_tds, snaps: stSnaps,
+          }
+        )
       }
       case 'coach-head': {
         const t = teamSeasonByAbbr.get(team)
-        return t && { won: t.wins, lost: t.losses, tied: t.ties, ptDiff: t.point_diff }
+        if (!t) return null
+        const yardsFor = (t.rush_yds_avg ?? 0) + (t.pass_yds_avg ?? 0)
+        const yardsAgainst = (t.rush_yds_allowed_avg ?? 0) + (t.pass_yds_allowed_avg ?? 0)
+        return {
+          won: t.wins, lost: t.losses, tied: t.ties, ptDiff: t.point_diff,
+          ydDiff: round2((yardsFor - yardsAgainst) * (t.games_played ?? 0)),
+          offTd: (t.rush_td ?? 0) + (t.pass_td ?? 0), defTd: t.def_td, stTd: t.st_td, fgMade: t.fg_made,
+          stYds: round2(((t.kick_return_yards_avg ?? 0) + (t.punt_return_yards_avg ?? 0)) * (t.games_played ?? 0)),
+        }
       }
       case 'coach-offense': {
         const t = teamSeasonByAbbr.get(team)
@@ -628,9 +763,15 @@ export default function FantasyScoresPage() {
     }
 
     const col = POINTS_COLUMN[activeSub]
-    const points = activeSub === 'all-offense' ? offensePoints : (fp) => Number(fp[col])
+    // 'defense-td' ranks by raw defensive-TD count, not fantasy points --
+    // called out explicitly in its sub note (see TOP_CATEGORIES above).
+    const points =
+      activeSub === 'all-offense' ? offensePoints
+      : activeSub === 'defense-td' ? (fp) => Number(defenseByPlayer.get(fp.player_id)?.def_tds ?? 0)
+      : (fp) => Number(fp[col])
+    const usesRealColumn = activeSub !== 'all-offense' && activeSub !== 'defense-td'
     return fantasyPoints
-      .filter((r) => (activeSub === 'all-offense' ? offensePoints(r) !== 0 : r[col] != null && Number(r[col]) !== 0))
+      .filter((r) => (usesRealColumn ? r[col] != null && Number(r[col]) !== 0 : points(r) !== 0))
       .slice()
       .sort((a, b) => points(b) - points(a))
       .map((fp) => {
