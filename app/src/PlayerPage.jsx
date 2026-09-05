@@ -736,33 +736,43 @@ export default function PlayerPage() {
           supabase.from('injuries').select('*').eq('player_id', playerId).order('season').order('week'),
           supabase.from('trades').select('*').eq('player_id', playerId).order('trade_date', { ascending: false }),
           supabase.from('player_season_fantasy_points').select('*').eq('player_id', playerId).order('season'),
-          supabase
-            .from('player_game_fantasy_points')
-            .select('*, games!inner(season, week, game_type)')
-            .eq('player_id', playerId)
-            .order('season', { foreignTable: 'games' })
-            .order('week', { foreignTable: 'games' }),
-        ]).then(([collegeSeasonsRes, collegeRosterRes, injuryHistoryRes, tradesRes, fantasyPointsRes, fantasyGamesRes]) => [
+        ]).then(([collegeSeasonsRes, collegeRosterRes, injuryHistoryRes, tradesRes, fantasyPointsRes]) => [
           snapCountsRes,
           collegeSeasonsRes,
           collegeRosterRes,
           injuryHistoryRes,
           tradesRes,
           fantasyPointsRes,
-          fantasyGamesRes,
         ])
       })
-      .then(([snapCountsRes, collegeSeasonsRes, collegeRosterRes, injuryHistoryRes, tradesRes, fantasyPointsRes, fantasyGamesRes]) => {
-        if (cancelled) return
+      .then(([snapCountsRes, collegeSeasonsRes, collegeRosterRes, injuryHistoryRes, tradesRes, fantasyPointsRes]) => {
+        if (cancelled) return Promise.reject({ handled: true })
         const err =
           collegeSeasonsRes.error || collegeRosterRes.error || injuryHistoryRes.error || tradesRes.error ||
-          fantasyPointsRes.error || fantasyGamesRes.error
+          fantasyPointsRes.error
         if (err) throw err
         setCollegeSeasons(collegeSeasonsRes.data)
         setCollegeRoster(collegeRosterRes.data)
         setInjuryHistory(injuryHistoryRes.data)
         setTrades(tradesRes.data)
         setFantasyPoints(fantasyPointsRes.data)
+
+        // Per-game fantasy points (for the weekly drilldown) as its own
+        // stage rather than folded into the batch above -- keeps every
+        // stage's peak concurrency down, which is the whole point of
+        // splitting these into stages to begin with (see the comment at
+        // the top of this effect).
+        return supabase
+          .from('player_game_fantasy_points')
+          .select('*, games!inner(season, week, game_type, home_team, away_team)')
+          .eq('player_id', playerId)
+          .order('season', { foreignTable: 'games' })
+          .order('week', { foreignTable: 'games' })
+          .then((fantasyGamesRes) => [snapCountsRes, fantasyGamesRes])
+      })
+      .then(([snapCountsRes, fantasyGamesRes]) => {
+        if (cancelled) return
+        if (fantasyGamesRes.error) throw fantasyGamesRes.error
         setFantasyPointsGames(fantasyGamesRes.data)
 
         // Team-level per-game context (offensive snaps run, sacks/QB hits
@@ -902,10 +912,16 @@ export default function PlayerPage() {
   // player_season_fantasy_points has no team column -- a player can play
   // for more than one team in a season) a season/career -> team lookup
   // derived from them for the season table's logo column.
-  const fantasyGamesAugmented = useMemo(
-    () => flattenGameRows(fantasyPointsGames, snapCountsByGameId, 'offense_snaps'),
-    [fantasyPointsGames, snapCountsByGameId],
-  )
+  const fantasyGamesAugmented = useMemo(() => {
+    // player_game_fantasy_points has no opponent_team column of its own
+    // (unlike the raw offense/defense/special-teams stat tables) -- derive
+    // it from the joined game's home/away teams instead.
+    const flattened = flattenGameRows(fantasyPointsGames, snapCountsByGameId, 'offense_snaps')
+    return flattened.map((row) => ({
+      ...row,
+      opponent_team: row.games.home_team === row.team ? row.games.away_team : row.games.home_team,
+    }))
+  }, [fantasyPointsGames, snapCountsByGameId])
   const fantasyGamesBySeason = useMemo(() => groupBySeason(fantasyGamesAugmented), [fantasyGamesAugmented])
   const fantasyTeamBySeason = useMemo(() => {
     const map = new Map()
