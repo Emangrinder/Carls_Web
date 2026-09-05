@@ -241,6 +241,13 @@ def compute_returning(r):
     return to_num(r["kickoff_return_yards"]) * 0.1 + to_num(r["punt_return_yards"]) * 0.2
 
 
+# Blocking Bonus (avg yards/completion, avg yards/rush, rush attempts, avg
+# yards/reception) is a lineman-adjacent bonus meant for the two positions
+# that actually spring these plays as run/pass blockers -- everyone else's
+# raw per-play averages aren't a "blocking" signal at all.
+BLOCKING_BONUS_POSITIONS = {"TE", "FB"}
+
+
 def build_fantasy_scores(season: int):
     db_path = DB_DIR / f"nfl_{season}.db"
     if not db_path.exists():
@@ -249,6 +256,8 @@ def build_fantasy_scores(season: int):
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
+
+    positions = {r["player_id"]: r["position"] for r in cur.execute("SELECT player_id, position FROM players")}
 
     cur.execute("DROP TABLE IF EXISTS player_game_fantasy_points")
     cur.execute(
@@ -296,7 +305,8 @@ def build_fantasy_scores(season: int):
         row["passing"] += compute_passing(r)
         row["rushing"] += compute_rushing(r)
         row["receiving"] += compute_receiving(r)
-        row["blocking_bonus"] += compute_blocking_bonus(r)
+        if positions.get(r["player_id"]) in BLOCKING_BONUS_POSITIONS:
+            row["blocking_bonus"] += compute_blocking_bonus(r)
         row["fumbles_fouls"] += compute_offense_fumbles(r)
         n_off += 1
 
@@ -330,11 +340,11 @@ def build_fantasy_scores(season: int):
             ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 row["player_id"], row["game_id"], row["team"],
-                round(row["passing"], 3), round(row["rushing"], 3), round(row["receiving"], 3),
-                round(row["blocking_bonus"], 3), round(row["fumbles_fouls"], 3), round(defense, 3),
-                round(row["pressure"], 3), round(row["coverage"], 3), round(row["turnover"], 3),
-                round(row["kicking"], 3), round(row["punting"], 3), round(row["returning"], 3),
-                round(total, 3),
+                round(row["passing"], 2), round(row["rushing"], 2), round(row["receiving"], 2),
+                round(row["blocking_bonus"], 2), round(row["fumbles_fouls"], 2), round(defense, 2),
+                round(row["pressure"], 2), round(row["coverage"], 2), round(row["turnover"], 2),
+                round(row["kicking"], 2), round(row["punting"], 2), round(row["returning"], 2),
+                round(total, 2),
             ),
         )
 

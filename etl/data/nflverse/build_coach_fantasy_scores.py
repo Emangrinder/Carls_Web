@@ -198,9 +198,9 @@ def build_coach_fantasy_scores(season: int):
                 ) VALUES (?,?,?,?,?)""",
                 (
                     team, g["game_id"],
-                    round(compute_head_coach(own["points_for"], own["points_against"]), 3),
-                    round(compute_offensive_coordinator(own, opp), 3),
-                    round(compute_defensive_coordinator(own, opp), 3),
+                    round(compute_head_coach(own["points_for"], own["points_against"]), 2),
+                    round(compute_offensive_coordinator(own, opp), 2),
+                    round(compute_defensive_coordinator(own, opp), 2),
                 ),
             )
         n_games += 1

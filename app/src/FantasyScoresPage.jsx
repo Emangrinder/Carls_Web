@@ -157,23 +157,14 @@ const TEAM_AVG_COLUMN = {
 }
 const COACH_LABEL = { 'coach-head': 'Head Coach', 'coach-offense': 'ST', 'coach-defense': 'Def' }
 
-// nflverse's own position codes are 'K'/'P' -- the legal-lineup slots
-// (per fantasyRulesData.js's STARTING_LINEUP_ROWS) call them PK/PN.
-function legalPosition(position) {
-  if (position === 'QB') return 'QB'
-  if (position === 'K') return 'PK'
-  if (position === 'P') return 'PN'
-  return 'IDP/Skill'
-}
-
 function lastNameOnly(fullName) {
   const rest = fullName.split(' ').slice(1).join(' ')
   return rest || fullName
 }
 
-function round1(n) {
+function round2(n) {
   if (n == null || Number.isNaN(n)) return null
-  return Math.round(n * 10) / 10
+  return Math.round(n * 100) / 100
 }
 
 // PostgREST caps a single response at 1000 rows -- fine for anything
@@ -374,10 +365,10 @@ export default function FantasyScoresPage() {
         const s = offenseByPlayer.get(playerId)
         if (!s) return null
         return {
-          avgPassComp: s.completions ? round1(s.passing_yards / s.completions) : 0,
-          avgRush: s.carries ? round1(s.rushing_yards / s.carries) : 0,
+          avgPassComp: s.completions ? round2(s.passing_yards / s.completions) : 0,
+          avgRush: s.carries ? round2(s.rushing_yards / s.carries) : 0,
           rushAtt: s.carries,
-          avgRec: s.receptions ? round1(s.receiving_yards / s.receptions) : 0,
+          avgRec: s.receptions ? round2(s.receiving_yards / s.receptions) : 0,
         }
       }
       case 'pressure': {
@@ -403,7 +394,7 @@ export default function FantasyScoresPage() {
       }
       case 'punting': {
         const s = specialByPlayer.get(playerId)
-        return s && { punts: s.pt_att, puntYds: s.pt_yards, puntAvg: s.pt_att ? round1(s.pt_yards / s.pt_att) : 0 }
+        return s && { punts: s.pt_att, puntYds: s.pt_yards, puntAvg: s.pt_att ? round2(s.pt_yards / s.pt_att) : 0 }
       }
       case 'returning': {
         const s = specialByPlayer.get(playerId)
@@ -425,7 +416,7 @@ export default function FantasyScoresPage() {
         return (
           t && {
             oppPassTd: t.pass_td_allowed, oppRushTd: t.rush_td_allowed, sacks: t.sacks, int: t.def_ints,
-            passYdsAllowed: round1(t.pass_yds_allowed_avg), rushYdsAllowed: round1(t.rush_yds_allowed_avg),
+            passYdsAllowed: round2(t.pass_yds_allowed_avg), rushYdsAllowed: round2(t.rush_yds_allowed_avg),
           }
         )
       }
@@ -457,7 +448,7 @@ export default function FantasyScoresPage() {
             key: fp.player_id,
             playerId: fp.player_id,
             name: player?.display_name ?? fp.player_id,
-            legalPosition: legalPosition(player?.position),
+            position: player?.position ?? '—',
             team: teamOf(fp.player_id) ?? '???',
             total: Number(fp.total_points),
             avg: Number(fp.avg_points),
@@ -476,7 +467,7 @@ export default function FantasyScoresPage() {
         .map((r) => ({
           key: r.team,
           name: teamsByAbbr.get(r.team)?.team_name ?? r.team,
-          legalPosition: COACH_LABEL[activeSub],
+          position: COACH_LABEL[activeSub],
           team: r.team,
           total: Number(r[col]),
           avg: Number(r[avgCol]),
@@ -498,10 +489,10 @@ export default function FantasyScoresPage() {
           key: fp.player_id,
           playerId: fp.player_id,
           name: player?.display_name ?? fp.player_id,
-          legalPosition: legalPosition(player?.position),
+          position: player?.position ?? '—',
           team,
           total: Number(fp[col]),
-          avg: round1(Number(fp[col]) / Number(fp.games)),
+          avg: round2(Number(fp[col]) / Number(fp.games)),
           statValues: statValuesFor(activeSub, fp.player_id, team),
         }
       })
@@ -630,7 +621,7 @@ export default function FantasyScoresPage() {
                     <div className="truncate font-medium text-neutral-900 dark:text-neutral-100">
                       {r.isTeam ? r.name : lastNameOnly(r.name)}
                     </div>
-                    <div className="text-xs text-neutral-400">{r.legalPosition}</div>
+                    <div className="text-xs text-neutral-400">{r.position}</div>
                   </td>
                   <td
                     className={`${FROZEN_TD} px-2 py-2 text-right font-semibold tabular-nums text-neutral-900 dark:text-neutral-100`}

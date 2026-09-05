@@ -465,22 +465,35 @@ const RETURNS_COLUMNS = [
 // Applied points from player_season_fantasy_points -- computed per the
 // Fantasy Rules formulas (app/src/fantasyRulesData.js) universally, so
 // every category column can be non-zero regardless of this player's own
-// primary position. See etl/data/nflverse/build_fantasy_scores.py for
-// exactly which sub-bonuses aren't computable from our per-game
-// aggregates (mainly TD-length tiers) and are therefore left out.
-const FANTASY_COLUMNS = [
+// primary position (Blocking Bonus is the one exception -- TE/FB only).
+// See etl/data/nflverse/build_fantasy_scores.py for exactly which
+// sub-bonuses aren't computable from our per-game aggregates (mainly
+// TD-length tiers) and are therefore left out.
+//
+// Split into the same groups Fantasy Scores toggles by (Defense broken
+// into Pressure/Coverage/Turnover) rather than one lumped Defense number.
+const FANTASY_BASE_COLUMNS = [
   { header: 'Total', render: (r) => r.total_points },
   { header: 'Avg', render: (r) => r.avg_points },
-  { header: 'Passing', render: (r) => fmtNum(r.passing_points) },
-  { header: 'Rushing', render: (r) => fmtNum(r.rushing_points) },
-  { header: 'Receiving', render: (r) => fmtNum(r.receiving_points) },
-  { header: 'Blocking Bonus', render: (r) => fmtNum(r.blocking_bonus_points) },
-  { header: 'Fumbles/Fouls', render: (r) => fmtNum(r.fumbles_fouls_points) },
-  { header: 'Defense', render: (r) => fmtNum(r.defense_points) },
-  { header: 'Kicking', render: (r) => fmtNum(r.kicking_points) },
-  { header: 'Punting', render: (r) => fmtNum(r.punting_points) },
-  { header: 'Returning', render: (r) => fmtNum(r.returning_points) },
 ]
+const FANTASY_GROUP_COLUMNS = [
+  { key: 'passing_points', header: 'Passing', render: (r) => fmtNum(r.passing_points) },
+  { key: 'rushing_points', header: 'Rushing', render: (r) => fmtNum(r.rushing_points) },
+  { key: 'receiving_points', header: 'Receiving', render: (r) => fmtNum(r.receiving_points) },
+  { key: 'blocking_bonus_points', header: 'Blocking Bonus', render: (r) => fmtNum(r.blocking_bonus_points) },
+  { key: 'fumbles_fouls_points', header: 'Fumbles/Fouls', render: (r) => fmtNum(r.fumbles_fouls_points) },
+  { key: 'pressure_points', header: 'Pressure', render: (r) => fmtNum(r.pressure_points) },
+  { key: 'coverage_points', header: 'Coverage', render: (r) => fmtNum(r.coverage_points) },
+  { key: 'turnover_points', header: 'Turnover', render: (r) => fmtNum(r.turnover_points) },
+  { key: 'kicking_points', header: 'Kicking', render: (r) => fmtNum(r.kicking_points) },
+  { key: 'punting_points', header: 'Punting', render: (r) => fmtNum(r.punting_points) },
+  { key: 'returning_points', header: 'Returning', render: (r) => fmtNum(r.returning_points) },
+]
+// A group's career total has to clear this to earn its own column --
+// keeps a single incidental stat (e.g. one fumble-return snap by a QB)
+// from cluttering the table with a group that isn't a real part of this
+// player's scoring.
+const NEGLIGIBLE_FANTASY_POINTS = 3
 
 // nflverse's `players.position` uses generic O-line codes (OT/G/C/T/OL),
 // unlike depth_chart_ranks' side-specific abbreviations (LT/LG/C/RG/RT).
@@ -879,21 +892,38 @@ export default function PlayerPage() {
 
   // Career row = a straight sum of the season rows already computed
   // server-side (player_season_fantasy_points), not a separate query.
+  // Re-rounded to hundredths since summing already-rounded floats can
+  // reintroduce a long floating-point tail (e.g. 0.1 + 0.2).
   const fantasyRows = useMemo(() => {
     if (fantasyPoints.length === 0) return []
     const totals = sumFields(fantasyPoints, [
       'games', 'passing_points', 'rushing_points', 'receiving_points', 'blocking_bonus_points',
-      'fumbles_fouls_points', 'defense_points', 'kicking_points', 'punting_points', 'returning_points',
-      'total_points',
+      'fumbles_fouls_points', 'pressure_points', 'coverage_points', 'turnover_points',
+      'kicking_points', 'punting_points', 'returning_points', 'total_points',
     ])
+    for (const key of Object.keys(totals)) {
+      if (key !== 'games' && totals[key] != null) totals[key] = Math.round(totals[key] * 100) / 100
+    }
     const career = {
       season: 'Career',
       ...totals,
-      avg_points: totals.games ? Math.round((totals.total_points / totals.games) * 10) / 10 : null,
+      avg_points: totals.games ? Math.round((totals.total_points / totals.games) * 100) / 100 : null,
       isTotal: true,
     }
     return [...fantasyPoints, career]
   }, [fantasyPoints])
+
+  // Only give a group its own column if this player's career total in it
+  // clears the negligible threshold -- otherwise it's noise, not a real
+  // part of how they score (see NEGLIGIBLE_FANTASY_POINTS above).
+  const visibleFantasyColumns = useMemo(() => {
+    if (fantasyRows.length === 0) return FANTASY_BASE_COLUMNS
+    const career = fantasyRows[fantasyRows.length - 1]
+    return [
+      ...FANTASY_BASE_COLUMNS,
+      ...FANTASY_GROUP_COLUMNS.filter((c) => Math.abs(career[c.key] ?? 0) > NEGLIGIBLE_FANTASY_POINTS),
+    ]
+  }, [fantasyRows])
 
   const hasCollegePassing = collegeCareer.some((r) => (r.pass_att ?? 0) > 0)
   const hasCollegeRushRec = collegeCareer.some((r) => (r.rush_att ?? 0) > 0 || (r.targets ?? 0) > 0)
@@ -1083,7 +1113,7 @@ export default function PlayerPage() {
               formulas, universally -- any category can be non-zero here regardless of this player's
               own primary position.
             </p>
-            <SeasonStatTable title="By Season" rows={fantasyRows} columns={FANTASY_COLUMNS} />
+            <SeasonStatTable title="By Season" rows={fantasyRows} columns={visibleFantasyColumns} />
           </>
         )}
 
