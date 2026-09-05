@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { supabase } from './supabaseClient'
 import { CURRENT_TEAMS } from './constants'
 import LoadingSpinner from './LoadingSpinner'
@@ -31,12 +31,14 @@ function fmtDateHeader(gameday, weekday) {
   return dateStr
 }
 
+// A plain (non-linking) side of the tile -- the whole tile navigates to
+// the match itself; touching a team name/logo to go straight to that
+// team's own page is a match-page action (see GamePage.jsx's TeamHeader),
+// not something this list view offers.
 function TeamSide({ abbr, name, score, isWinner, align }) {
   return (
-    <Link
-      to={`/team/${abbr}`}
-      onClick={(e) => e.stopPropagation()}
-      className={`flex min-w-0 flex-1 items-center gap-3 hover:underline ${
+    <div
+      className={`flex min-w-0 flex-1 items-center gap-3 ${
         align === 'right' ? 'flex-row-reverse text-right' : 'text-left'
       }`}
     >
@@ -65,7 +67,7 @@ function TeamSide({ abbr, name, score, isWinner, align }) {
           {score}
         </span>
       )}
-    </Link>
+    </div>
   )
 }
 

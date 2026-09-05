@@ -214,18 +214,18 @@ function TeamHeader({ abbr, name, score, isWinner, played, align }) {
   return (
     <Link
       to={`/team/${abbr}`}
-      className={`flex flex-1 items-center gap-4 hover:opacity-80 ${
+      className={`group flex flex-1 items-center gap-4 ${
         align === 'right' ? 'flex-row-reverse text-right' : 'text-left'
       }`}
     >
       <img
         src={`${import.meta.env.BASE_URL}logos/${abbr}.png`}
         alt={abbr}
-        className="h-16 w-16 shrink-0 object-contain"
+        className="h-16 w-16 shrink-0 object-contain transition-transform duration-150 group-hover:scale-110"
       />
       <div>
         <div
-          className={`hidden text-lg font-semibold sm:block ${
+          className={`hidden text-lg font-semibold transition-all duration-150 group-hover:font-extrabold sm:block ${
             isWinner ? 'text-neutral-900 dark:text-neutral-100' : 'text-neutral-500 dark:text-neutral-400'
           }`}
         >
