@@ -33,14 +33,14 @@ function PageSpinner() {
   }
 
   return (
-    <div className="flex shrink-0 items-center gap-1 border-r border-neutral-200 pr-4 dark:border-neutral-800">
+    <div className="flex shrink-0 flex-col items-center border-r border-neutral-200 pr-4 leading-none dark:border-neutral-800">
       <button
         type="button"
         onClick={() => go(-1)}
         aria-label="Previous page"
-        className="px-1 text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100"
+        className="text-[10px] text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100"
       >
-        ‹
+        ▲
       </button>
       <Link
         to={NAV_PAGES[index].path}
@@ -52,9 +52,9 @@ function PageSpinner() {
         type="button"
         onClick={() => go(1)}
         aria-label="Next page"
-        className="px-1 text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100"
+        className="text-[10px] text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100"
       >
-        ›
+        ▼
       </button>
     </div>
   )
