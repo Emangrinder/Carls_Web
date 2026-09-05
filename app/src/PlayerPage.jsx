@@ -595,6 +595,7 @@ export default function PlayerPage() {
   const [trades, setTrades] = useState([])
   const [teams, setTeams] = useState([])
   const [fantasyPoints, setFantasyPoints] = useState([])
+  const [fantasyPointsGames, setFantasyPointsGames] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
@@ -647,6 +648,7 @@ export default function PlayerPage() {
         setInjuryHistory([])
         setTrades([])
         setFantasyPoints([])
+        setFantasyPointsGames([])
         setTeams(teamsRes.data)
         setLoading(false)
       })
@@ -734,26 +736,34 @@ export default function PlayerPage() {
           supabase.from('injuries').select('*').eq('player_id', playerId).order('season').order('week'),
           supabase.from('trades').select('*').eq('player_id', playerId).order('trade_date', { ascending: false }),
           supabase.from('player_season_fantasy_points').select('*').eq('player_id', playerId).order('season'),
-        ]).then(([collegeSeasonsRes, collegeRosterRes, injuryHistoryRes, tradesRes, fantasyPointsRes]) => [
+          supabase
+            .from('player_game_fantasy_points')
+            .select('*, games!inner(season, week, game_type)')
+            .eq('player_id', playerId)
+            .order('season', { foreignTable: 'games' })
+            .order('week', { foreignTable: 'games' }),
+        ]).then(([collegeSeasonsRes, collegeRosterRes, injuryHistoryRes, tradesRes, fantasyPointsRes, fantasyGamesRes]) => [
           snapCountsRes,
           collegeSeasonsRes,
           collegeRosterRes,
           injuryHistoryRes,
           tradesRes,
           fantasyPointsRes,
+          fantasyGamesRes,
         ])
       })
-      .then(([snapCountsRes, collegeSeasonsRes, collegeRosterRes, injuryHistoryRes, tradesRes, fantasyPointsRes]) => {
+      .then(([snapCountsRes, collegeSeasonsRes, collegeRosterRes, injuryHistoryRes, tradesRes, fantasyPointsRes, fantasyGamesRes]) => {
         if (cancelled) return
         const err =
           collegeSeasonsRes.error || collegeRosterRes.error || injuryHistoryRes.error || tradesRes.error ||
-          fantasyPointsRes.error
+          fantasyPointsRes.error || fantasyGamesRes.error
         if (err) throw err
         setCollegeSeasons(collegeSeasonsRes.data)
         setCollegeRoster(collegeRosterRes.data)
         setInjuryHistory(injuryHistoryRes.data)
         setTrades(tradesRes.data)
         setFantasyPoints(fantasyPointsRes.data)
+        setFantasyPointsGames(fantasyGamesRes.data)
 
         // Team-level per-game context (offensive snaps run, sacks/QB hits
         // allowed) for the OL section -- fetched as a follow-up query since
@@ -888,6 +898,21 @@ export default function PlayerPage() {
   const hasPunting = puntingSeasons.some((r) => (r.pt_att ?? 0) > 0)
   const hasReturns = returnsSeasons.some((r) => (r.punt_returns ?? 0) > 0 || (r.kickoff_returns ?? 0) > 0)
 
+  // Per-game rows for the expandable weekly drilldown, and (since
+  // player_season_fantasy_points has no team column -- a player can play
+  // for more than one team in a season) a season/career -> team lookup
+  // derived from them for the season table's logo column.
+  const fantasyGamesAugmented = useMemo(
+    () => flattenGameRows(fantasyPointsGames, snapCountsByGameId, 'offense_snaps'),
+    [fantasyPointsGames, snapCountsByGameId],
+  )
+  const fantasyGamesBySeason = useMemo(() => groupBySeason(fantasyGamesAugmented), [fantasyGamesAugmented])
+  const fantasyTeamBySeason = useMemo(() => {
+    const map = new Map()
+    for (const g of fantasyGamesAugmented) map.set(g.season, g.team)
+    return map
+  }, [fantasyGamesAugmented])
+
   // Career row = a straight sum of the season rows already computed
   // server-side (player_season_fantasy_points), not a separate query.
   // Re-rounded to hundredths since summing already-rounded floats can
@@ -902,14 +927,16 @@ export default function PlayerPage() {
     for (const key of Object.keys(totals)) {
       if (key !== 'games' && totals[key] != null) totals[key] = Math.round(totals[key] * 100) / 100
     }
+    const seasonRowsWithTeam = fantasyPoints.map((row) => ({ ...row, team: fantasyTeamBySeason.get(row.season) }))
     const career = {
       season: 'Career',
+      team: fantasyGamesAugmented[fantasyGamesAugmented.length - 1]?.team,
       ...totals,
       avg_points: totals.games ? Math.round((totals.total_points / totals.games) * 100) / 100 : null,
       isTotal: true,
     }
-    return [...fantasyPoints, career]
-  }, [fantasyPoints])
+    return [...seasonRowsWithTeam, career]
+  }, [fantasyPoints, fantasyTeamBySeason, fantasyGamesAugmented])
 
   // Only give a group its own column if this player's career total in it
   // clears the negligible threshold -- otherwise it's noise, not a real
@@ -1112,7 +1139,12 @@ export default function PlayerPage() {
               category can be non-zero here even if it's not this player's primary position (e.g. a gadget-play
               rushing touchdown for a WR).
             </p>
-            <SeasonStatTable title="By Season" rows={fantasyRows} columns={visibleFantasyColumns} />
+            <ExpandableSeasonStatTable
+              title="By Season"
+              seasonRows={fantasyRows}
+              gamesBySeason={fantasyGamesBySeason}
+              columns={visibleFantasyColumns}
+            />
           </>
         )}
 

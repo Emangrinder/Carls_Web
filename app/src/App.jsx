@@ -7,6 +7,7 @@ import GamePage from './GamePage'
 import DivisionNav from './DivisionNav'
 import Footer from './Footer'
 import PlayerPage from './PlayerPage'
+import CoachPage from './CoachPage'
 import FantasyRulesPage from './FantasyRulesPage'
 import FantasyScoresPage from './FantasyScoresPage'
 
@@ -24,6 +25,7 @@ function App() {
               <Route path="/matches/:gameId" element={<GamePage />} />
               <Route path="/team/:teamAbbr" element={<TeamPage />} />
               <Route path="/player/:playerId" element={<PlayerPage />} />
+              <Route path="/coach/:teamAbbr" element={<CoachPage />} />
               <Route path="/rules" element={<FantasyRulesPage />} />
               <Route path="/scores" element={<FantasyScoresPage />} />
             </Routes>

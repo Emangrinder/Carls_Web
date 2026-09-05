@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { supabase } from './supabaseClient'
 import LoadingSpinner from './LoadingSpinner'
 
@@ -748,7 +749,15 @@ export default function FantasyScoresPage() {
                   </td>
                   <td className={`${FROZEN_TD} py-2 pr-2`} style={{ left: COL_LEFT.name, width: COL_WIDTHS.name }}>
                     <div className="truncate font-medium text-neutral-900 dark:text-neutral-100">
-                      {r.isTeam ? r.name : lastNameOnly(r.name)}
+                      {r.isTeam ? (
+                        <Link to={activeSub === 'coach-head' ? `/coach/${r.team}` : `/team/${r.team}`} className="hover:underline">
+                          {r.name}
+                        </Link>
+                      ) : (
+                        <Link to={`/player/${r.playerId}`} className="hover:underline">
+                          {lastNameOnly(r.name)}
+                        </Link>
+                      )}
                     </div>
                     <div className="text-xs text-neutral-400">{r.position}</div>
                   </td>
