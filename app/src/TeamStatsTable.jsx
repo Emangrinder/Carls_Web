@@ -520,6 +520,18 @@ export default function TeamStatsTable() {
           onToggleConference={cycleConfGroup}
         />
       )}
+
+      {/* Pressure/Coverage sort by a summed total, not any one visible
+          column -- spell out exactly which columns (already defined on
+          each group's own sortFields, not a separate hardcoded list) add
+          up to that ranking. */}
+      {!loading && !error && activeTable === 'defense' && (
+        <p className="mt-3 text-xs text-neutral-400">
+          {TABLES.defense.groups
+            .map((g) => `${g.label} order = ${g.sortFields.map((f) => g.stats.find((s) => s.key === f)?.label ?? f).join(' + ')}`)
+            .join('  ·  ')}
+        </p>
+      )}
     </div>
   )
 }
