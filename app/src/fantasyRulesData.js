@@ -5,10 +5,10 @@
 //
 // Every group here is "universal": the events it lists can be scored for
 // ANY roster player who records them (a TE who throws a TD pass still
-// earns the QB group's passing-TD points), NOT just the position the
-// group is nominally named after -- that's the whole point of tagging
-// them. The three EXCEPTIONS are Coach, ST, and DEF: those are tied to
-// their own dedicated roster slots and never apply to anyone else.
+// earns the Passing group's points), NOT the specific position the group
+// used to be drawn up around. The three EXCEPTIONS are Head Coach,
+// Offensive Coordinator (ST), and Defensive Coordinator (DEF): those are
+// tied to their own dedicated roster slots and never apply to anyone else.
 //
 // Numbers transcribed from a screenshot of a dense table -- double-check
 // the exact figures against the league's own rules page before treating
@@ -16,9 +16,7 @@
 
 export const RULE_GROUPS = [
   {
-    tag: 'Coach',
-    title: 'Rules for Coach',
-    appliesTo: ['Head Coach'],
+    tag: 'Head Coach',
     independent: true,
     rules: [
       { event: 'Point Differential', range: '-199-199', points: '0.3 points each' },
@@ -28,9 +26,7 @@ export const RULE_GROUPS = [
     ],
   },
   {
-    tag: 'QB',
-    title: 'Rules for QB',
-    appliesTo: ['QB'],
+    tag: 'Passing',
     rules: [
       { event: 'Number of Passing TDs', range: '1-99', points: '2 points each' },
       { event: 'Length of Passing TD', range: '0-9', points: '1' },
@@ -53,9 +49,7 @@ export const RULE_GROUPS = [
     ],
   },
   {
-    tag: 'Rush/Rec',
-    title: 'Rules for QB, RB, FB, WR, TE',
-    appliesTo: ['QB', 'RB', 'FB', 'WR', 'TE'],
+    tag: 'Rushing/Receiving',
     rules: [
       { event: 'Number of Rushing TDs', range: '1-10', points: '2 points each' },
       { event: 'Length of Rushing TD', range: '0-9', points: '1' },
@@ -79,7 +73,7 @@ export const RULE_GROUPS = [
       { event: 'Length of Receiving TD', range: '99-100', points: '12' },
       { event: 'Receiving Yards', range: '-50-999', points: '0.1 points each' },
       { event: 'Receptions', range: '1-99', points: '1 point each' },
-      { event: 'Targets', range: '0-99', points: '-0.5 points each', test: 'Test (Warning)' },
+      { event: 'Targets', range: '0-99', points: '-0.5 points each' },
       { event: 'Long Receptions of 20+ Yards', range: '1-99', points: '1 point each' },
       { event: 'Long Receptions of 40+ Yards', range: '1-99', points: '2 points each' },
       { event: 'Receiving 2 Pointers', range: '1-10', points: '2 points each' },
@@ -87,8 +81,6 @@ export const RULE_GROUPS = [
   },
   {
     tag: 'Fumbles',
-    title: 'Rules for QB, RB, FB, WR, TE, PK, PN, DT, LB, CB, S',
-    appliesTo: ['QB', 'RB', 'FB', 'WR', 'TE', 'PK', 'PN', 'DT', 'LB', 'CB', 'S'],
     rules: [
       { event: 'Fumbles', range: '1-99', points: '-2 points each' },
       { event: 'Fumbles Lost (to Opponent)', range: '1-99', points: '-3 points each' },
@@ -100,9 +92,7 @@ export const RULE_GROUPS = [
     ],
   },
   {
-    tag: 'Returns',
-    title: 'Rules for RB, FB, WR, TE, CB, S, LB',
-    appliesTo: ['RB', 'FB', 'WR', 'TE', 'CB', 'S', 'LB'],
+    tag: 'Returning',
     rules: [
       { event: 'Length of Punt Return TD', range: '0-39', points: '6' },
       { event: 'Length of Punt Return TD', range: '40-59', points: '8' },
@@ -118,9 +108,7 @@ export const RULE_GROUPS = [
     ],
   },
   {
-    tag: 'Efficiency',
-    title: 'Rules for FB, TE',
-    appliesTo: ['FB', 'TE'],
+    tag: 'Blocking Bonus',
     rules: [
       { event: 'Average Yards per Pass Completion', range: '-99-100', points: '0.1 points each' },
       { event: 'Average Yards per Rush', range: '-99-100', points: '1 point each' },
@@ -130,8 +118,6 @@ export const RULE_GROUPS = [
   },
   {
     tag: 'Kicking',
-    title: 'Rules for PK',
-    appliesTo: ['PK'],
     rules: [
       { event: 'Length of Field Goal Made', range: '0-29', points: '2' },
       { event: 'Length of Field Goal Made', range: '30-39', points: '3' },
@@ -155,8 +141,6 @@ export const RULE_GROUPS = [
   },
   {
     tag: 'Punting',
-    title: 'Rules for PN',
-    appliesTo: ['PN'],
     rules: [
       { event: 'Punt Yards', range: '-999-0', points: '-5' },
       { event: 'Punt Yards', range: '1-100', points: '1' },
@@ -173,9 +157,7 @@ export const RULE_GROUPS = [
     ],
   },
   {
-    tag: 'IDP Defense',
-    title: 'Rules for DT, DE, LB, CB, S',
-    appliesTo: ['DT', 'DE', 'LB', 'CB', 'S'],
+    tag: 'Defense',
     rules: [
       { event: 'Fumble Recoveries (from Opponent)', range: '1-99', points: '3 points each' },
       { event: 'Opponent Fumble Recovery Yards', range: '-50-999', points: '0.3 points each' },
@@ -198,10 +180,8 @@ export const RULE_GROUPS = [
     ],
   },
   {
-    tag: 'ST',
-    title: 'Rules for ST',
-    subtitle: "ST is the team's offense.",
-    appliesTo: ['ST'],
+    tag: 'Offensive Coordinator',
+    subtitle: "The team's offense as a unit (ST).",
     independent: true,
     rules: [
       { event: 'Number of Passing TDs', range: '1-99', points: '1.5 points each' },
@@ -218,9 +198,8 @@ export const RULE_GROUPS = [
     ],
   },
   {
-    tag: 'DEF',
-    title: 'Rules for DEF',
-    appliesTo: ['DEF'],
+    tag: 'Defensive Coordinator',
+    subtitle: "The team's defense as a unit (DEF).",
     independent: true,
     rules: [
       { event: 'Opponent Number of Passing TDs', range: '1-99', points: '-1 point each' },
@@ -235,7 +214,7 @@ export const RULE_GROUPS = [
       { event: 'Sacked a QB', range: '1-25', points: '2 points each' },
       { event: 'Quarterback Hits', range: '1-99', points: '0.3 points each' },
       { event: 'Safeties', range: '1-10', points: '5 points each' },
-      { event: 'Offensive Points Against', range: '0-9', points: '5', test: 'Test (Warning)' },
+      { event: 'Offensive Points Against', range: '0-9', points: '5' },
       { event: 'Passing Yards Allowed', range: '0-99', points: '5' },
       { event: 'Passing Yards Allowed', range: '100-999', points: '0.01 points each' },
       { event: 'Rushing Yards Allowed', range: '0-99', points: '5' },
@@ -247,20 +226,38 @@ export const RULE_GROUPS = [
   },
 ]
 
-// Every group except Coach/ST/DEF scores for whichever roster player
-// actually recorded the event, regardless of their primary position.
+// Every group except Head Coach/Offensive Coordinator/Defensive
+// Coordinator scores for whichever roster player actually recorded the
+// event, regardless of their primary position.
 export const UNIVERSAL_TAGS = RULE_GROUPS.filter((g) => !g.independent).map((g) => g.tag)
 export const INDEPENDENT_TAGS = RULE_GROUPS.filter((g) => g.independent).map((g) => g.tag)
 
-// Legal starting lineup composition.
-export const STARTING_LINEUP = [
-  { slot: 'Head Coach', count: 1 },
-  { slot: 'Defense (DEF)', count: 1 },
-  { slot: 'Special Teams (ST)', count: 1 },
-  { slot: 'QB', count: 1 },
-  { slot: 'PK', count: 1 },
-  { slot: 'PN', count: 1 },
-  { slot: 'Any IDP or skill position', count: 10 },
+// Legal starting lineup composition -- the top three rows are two single-
+// count slots side by side, the rest are one full-width row each.
+export const STARTING_LINEUP_ROWS = [
+  [{ label: 'Head Coach (HC)', count: 1 }, { label: 'Quarterback (QB)', count: 1 }],
+  [{ label: 'Defense (Def)', count: 1 }, { label: 'Offense (ST)', count: 1 }],
+  [{ label: 'Kicker (PK)', count: 1 }, { label: 'Punter (PN)', count: 1 }],
+  [{ label: 'IDP/Skill', count: 10 }],
+  [{ label: 'Reserve', count: 5 }],
+  [{ label: 'IR', count: 2 }],
 ]
-export const IR_SLOTS = 2
-export const RESERVE_SLOTS = 5
+
+// Roster (not just starting-lineup) position count limits.
+export const ROSTER_LIMITS = [
+  { position: 'Coach', range: '1-2' },
+  { position: 'QB', range: '1-2' },
+  { position: 'RB', range: '0-4' },
+  { position: 'FB', range: '0-2' },
+  { position: 'WR', range: '0-4' },
+  { position: 'TE', range: '0-3' },
+  { position: 'PK', range: '1-2' },
+  { position: 'PN', range: '1-2' },
+  { position: 'DT', range: '0-3' },
+  { position: 'DE', range: '0-3' },
+  { position: 'LB', range: '0-4' },
+  { position: 'CB', range: '0-3' },
+  { position: 'S', range: '0-3' },
+  { position: 'Def', range: '1-2' },
+  { position: 'ST', range: '1-2' },
+]

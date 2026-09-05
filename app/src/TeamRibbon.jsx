@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { supabase } from './supabaseClient'
 
 function Logo({ team, className = '' }) {
@@ -9,6 +9,54 @@ function Logo({ team, className = '' }) {
       alt={team}
       className={`h-8 w-8 shrink-0 object-contain ${className}`}
     />
+  )
+}
+
+// A single control cycling between the app's top-level pages instead of
+// showing them all as separate links -- click an arrow, it moves to the
+// next/previous page in the list (wrapping at the ends).
+const NAV_PAGES = [
+  { path: '/rules', label: 'Fantasy Rules' },
+  { path: '/matches', label: 'Matches' },
+  { path: '/scores', label: 'Fantasy Scores' },
+]
+
+function PageSpinner() {
+  const location = useLocation()
+  const navigate = useNavigate()
+  const activeIndex = NAV_PAGES.findIndex((p) => location.pathname.startsWith(p.path))
+  const index = activeIndex === -1 ? 0 : activeIndex
+
+  function go(delta) {
+    const next = (index + delta + NAV_PAGES.length) % NAV_PAGES.length
+    navigate(NAV_PAGES[next].path)
+  }
+
+  return (
+    <div className="flex shrink-0 items-center gap-1 border-r border-neutral-200 pr-4 dark:border-neutral-800">
+      <button
+        type="button"
+        onClick={() => go(-1)}
+        aria-label="Previous page"
+        className="px-1 text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100"
+      >
+        ‹
+      </button>
+      <Link
+        to={NAV_PAGES[index].path}
+        className="w-28 text-center text-sm font-medium text-neutral-600 hover:text-neutral-900 dark:text-neutral-300 dark:hover:text-neutral-100"
+      >
+        {NAV_PAGES[index].label}
+      </Link>
+      <button
+        type="button"
+        onClick={() => go(1)}
+        aria-label="Next page"
+        className="px-1 text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100"
+      >
+        ›
+      </button>
+    </div>
   )
 }
 
@@ -101,18 +149,7 @@ export default function TeamRibbon() {
       <Link to="/" className="shrink-0 pr-4">
         <Logo team="NFL" />
       </Link>
-      <Link
-        to="/rules"
-        className="shrink-0 border-r border-neutral-200 pr-4 text-sm font-medium text-neutral-600 hover:text-neutral-900 dark:border-neutral-800 dark:text-neutral-300 dark:hover:text-neutral-100"
-      >
-        Fantasy Rules
-      </Link>
-      <Link
-        to="/matches"
-        className="shrink-0 border-r border-neutral-200 pr-4 text-sm font-medium text-neutral-600 hover:text-neutral-900 dark:border-neutral-800 dark:text-neutral-300 dark:hover:text-neutral-100"
-      >
-        Matches
-      </Link>
+      <PageSpinner />
       <div
         className="min-w-0 flex-1 overflow-hidden"
         style={{
