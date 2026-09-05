@@ -265,7 +265,7 @@ function sumByTeam(rows, fields) {
 // Pixel widths/offsets for the frozen columns (logo, name, total, avg) --
 // sticky-left needs each cell's own cumulative offset and an opaque
 // background so scrolled columns don't show through.
-const COL_WIDTHS = { logo: 44, name: 108, total: 64, avg: 60 }
+const COL_WIDTHS = { logo: 52, name: 108, total: 64, avg: 60 }
 const COL_LEFT = {
   logo: 0,
   name: COL_WIDTHS.logo,
@@ -740,7 +740,7 @@ export default function FantasyScoresPage() {
               )}
               {visibleRows.map((r) => (
                 <tr key={r.key} className="border-b border-neutral-100 dark:border-neutral-900">
-                  <td className={`${FROZEN_TD} py-2`} style={{ left: COL_LEFT.logo, width: COL_WIDTHS.logo }}>
+                  <td className={`${FROZEN_TD} py-2 pl-2`} style={{ left: COL_LEFT.logo, width: COL_WIDTHS.logo }}>
                     <img
                       src={`${import.meta.env.BASE_URL}logos/${r.team}.png`}
                       alt={r.team}
