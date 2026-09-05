@@ -46,9 +46,8 @@ function PageSpinner() {
         type="button"
         onClick={() => go(-1)}
         aria-label="Previous page"
-        className="flex items-center gap-1 truncate pb-0.5 text-[10px] text-neutral-300 transition-colors hover:text-neutral-600 dark:text-neutral-700 dark:hover:text-neutral-400"
+        className="truncate pb-0.5 text-[10px] text-neutral-300 transition-colors hover:text-neutral-600 dark:text-neutral-700 dark:hover:text-neutral-400"
       >
-        <span>▲</span>
         <span className="truncate">{prevPage.label}</span>
       </button>
       <Link
@@ -61,10 +60,9 @@ function PageSpinner() {
         type="button"
         onClick={() => go(1)}
         aria-label="Next page"
-        className="flex items-center gap-1 truncate pt-0.5 text-[10px] text-neutral-300 transition-colors hover:text-neutral-600 dark:text-neutral-700 dark:hover:text-neutral-400"
+        className="truncate pt-0.5 text-[10px] text-neutral-300 transition-colors hover:text-neutral-600 dark:text-neutral-700 dark:hover:text-neutral-400"
       >
         <span className="truncate">{nextPage.label}</span>
-        <span>▼</span>
       </button>
     </div>
   )
