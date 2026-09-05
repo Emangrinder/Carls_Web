@@ -74,6 +74,7 @@ const TOP_CATEGORIES = [
     key: 'offense',
     label: 'Offense',
     subs: [
+      { key: 'all-offense', label: 'All' },
       { key: 'passing', label: 'Passing' },
       { key: 'receiving', label: 'Receiving' },
       { key: 'rushing', label: 'Rushing' },
@@ -84,6 +85,7 @@ const TOP_CATEGORIES = [
     key: 'defense',
     label: 'Defense',
     subs: [
+      { key: 'all-defense', label: 'All' },
       { key: 'pressure', label: 'Pressure', note: 'TFL, QB Hits, Sacks' },
       { key: 'coverage', label: 'Coverage', note: 'Tackles, Assist Tackles, PDs' },
       { key: 'turnover', label: 'Turnover', note: 'FF, FR, INT, FR Yds, INT Ret Yds' },
@@ -109,42 +111,56 @@ const TOP_CATEGORIES = [
   },
 ]
 
+// Appended to every player-level (non-coaching) leaf's STAT_COLUMNS below --
+// the snap-count column relevant to that leaf's side of the ball.
+const OFFENSE_SNAPS_COL = { key: 'snaps', label: 'Snaps' }
+const DEFENSE_SNAPS_COL = { key: 'snaps', label: 'Snaps' }
+const SPECIAL_SNAPS_COL = { key: 'snaps', label: 'Snaps' }
+
 // The underlying counting stats shown per leaf category -- these feed
 // that category's fantasy points, per Fantasy Rules.
 const STAT_COLUMNS = {
+  'all-offense': [OFFENSE_SNAPS_COL],
   passing: [
     { key: 'comp', label: 'Comp' },
     { key: 'att', label: 'Att' },
     { key: 'yds', label: 'Yds' },
     { key: 'td', label: 'TD' },
     { key: 'int', label: 'INT' },
+    OFFENSE_SNAPS_COL,
   ],
   receiving: [
     { key: 'rec', label: 'Rec' },
     { key: 'targets', label: 'Targets' },
     { key: 'yds', label: 'Yds' },
     { key: 'td', label: 'TD' },
+    OFFENSE_SNAPS_COL,
   ],
   rushing: [
     { key: 'att', label: 'Att' },
     { key: 'yds', label: 'Yds' },
     { key: 'td', label: 'TD' },
+    OFFENSE_SNAPS_COL,
   ],
   'blocking-bonus': [
     { key: 'avgPassComp', label: 'Avg/Comp' },
     { key: 'avgRush', label: 'Avg/Rush' },
     { key: 'rushAtt', label: 'Rush Att' },
     { key: 'avgRec', label: 'Avg/Rec' },
+    OFFENSE_SNAPS_COL,
   ],
+  'all-defense': [DEFENSE_SNAPS_COL],
   pressure: [
     { key: 'tfl', label: 'TFL' },
     { key: 'qbHits', label: 'QB Hits' },
     { key: 'sacks', label: 'Sacks' },
+    DEFENSE_SNAPS_COL,
   ],
   coverage: [
     { key: 'tkl', label: 'Tackles' },
     { key: 'ast', label: 'Assists' },
     { key: 'pd', label: 'PD' },
+    DEFENSE_SNAPS_COL,
   ],
   turnover: [
     { key: 'ff', label: 'FF' },
@@ -152,6 +168,7 @@ const STAT_COLUMNS = {
     { key: 'int', label: 'INT' },
     { key: 'frYds', label: 'FR Yds' },
     { key: 'intYds', label: 'INT Ret Yds' },
+    DEFENSE_SNAPS_COL,
   ],
   'coach-head': [
     { key: 'won', label: 'Won' },
@@ -178,17 +195,20 @@ const STAT_COLUMNS = {
     { key: 'fgMade', label: 'FG Made' },
     { key: 'fgAtt', label: 'FG Att' },
     { key: 'xpMade', label: 'XP Made' },
+    SPECIAL_SNAPS_COL,
   ],
   punting: [
     { key: 'punts', label: 'Punts' },
     { key: 'puntYds', label: 'Punt Yds' },
     { key: 'puntAvg', label: 'Punt Avg' },
+    SPECIAL_SNAPS_COL,
   ],
   returning: [
     { key: 'kr', label: 'KR' },
     { key: 'krYds', label: 'KR Yds' },
     { key: 'pr', label: 'PR' },
     { key: 'prYds', label: 'PR Yds' },
+    SPECIAL_SNAPS_COL,
   ],
 }
 
@@ -200,6 +220,17 @@ const POINTS_COLUMN = {
   'blocking-bonus': 'blocking_bonus_points', pressure: 'pressure_points', coverage: 'coverage_points',
   turnover: 'turnover_points', kicking: 'kicking_points', punting: 'punting_points',
   returning: 'returning_points',
+  // Defense's total is already a real column (it's the sum of pressure/
+  // coverage/turnover server-side); Offense has no equivalent combined
+  // column, so 'all-offense' is computed client-side instead (see
+  // offensePoints below) rather than looked up here.
+  'all-defense': 'defense_points',
+}
+function offensePoints(fp) {
+  return (
+    Number(fp.passing_points ?? 0) + Number(fp.rushing_points ?? 0)
+    + Number(fp.receiving_points ?? 0) + Number(fp.blocking_bonus_points ?? 0)
+  )
 }
 const TEAM_POINTS_COLUMN = {
   'coach-head': 'coach_head_points', 'coach-offense': 'coach_offense_points',
@@ -272,7 +303,16 @@ const COL_LEFT = {
   total: COL_WIDTHS.logo + COL_WIDTHS.name,
   avg: COL_WIDTHS.logo + COL_WIDTHS.name + COL_WIDTHS.total,
 }
-const SCROLL_COL_WIDTH = 56
+// Weeks only ever needs to fit a couple of digits; stat columns get
+// progressively more room the fewer of them there are, so a label like
+// "Assists" or "Pt Diff" fits on one line instead of wrapping.
+function scrollColWidthFor(count, isWeeksTab) {
+  if (isWeeksTab) return 48
+  if (count <= 3) return 96
+  if (count <= 4) return 84
+  if (count <= 5) return 76
+  return 68
+}
 const FROZEN_WIDTH = COL_LEFT.avg + COL_WIDTHS.avg
 const FROZEN_TD = 'sticky z-10 bg-neutral-50 dark:bg-neutral-900'
 // Header cells need their own sticky-top (row scroll) layer, and the
@@ -333,6 +373,7 @@ export default function FantasyScoresPage() {
   const [specialStats, setSpecialStats] = useState([])
   const [teamFantasyPoints, setTeamFantasyPoints] = useState([])
   const [teamSeasonStats, setTeamSeasonStats] = useState([])
+  const [snapCounts, setSnapCounts] = useState([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -358,7 +399,8 @@ export default function FantasyScoresPage() {
       fetchAllRows(() => supabase.from('player_season_special_teams_stats').select('*').eq('season', season)),
       fetchAllRows(() => supabase.from('team_season_fantasy_points').select('*').eq('season', season)),
       fetchAllRows(() => supabase.from('team_season_stats').select('*').eq('season', season)),
-    ]).then(([fp, gp, off, def, spec, tfp, tss]) => {
+      fetchAllRows(() => supabase.from('player_season_snap_counts').select('*').eq('season', season)),
+    ]).then(([fp, gp, off, def, spec, tfp, tss, snaps]) => {
       if (cancelled) return
       setFantasyPoints(fp.data ?? [])
       setGamePoints(gp.data ?? [])
@@ -367,6 +409,7 @@ export default function FantasyScoresPage() {
       setSpecialStats(spec.data ?? [])
       setTeamFantasyPoints(tfp.data ?? [])
       setTeamSeasonStats(tss.data ?? [])
+      setSnapCounts(snaps.data ?? [])
       setLoading(false)
     })
     return () => {
@@ -408,6 +451,10 @@ export default function FantasyScoresPage() {
     () => sumByTeam(offenseStats, ['passing_first_downs', 'rushing_first_downs', 'receiving_first_downs']),
     [offenseStats],
   )
+  const snapsByPlayer = useMemo(
+    () => sumByPlayer(snapCounts, ['offense_snaps', 'defense_snaps', 'st_snaps']),
+    [snapCounts],
+  )
   const weekScoresByPlayer = useMemo(() => {
     const map = new Map()
     for (const r of gamePoints) {
@@ -428,18 +475,24 @@ export default function FantasyScoresPage() {
   }
 
   function statValuesFor(category, playerId, team) {
+    const offSnaps = snapsByPlayer.get(playerId)?.offense_snaps
+    const defSnaps = snapsByPlayer.get(playerId)?.defense_snaps
+    const stSnaps = snapsByPlayer.get(playerId)?.st_snaps
     switch (category) {
+      case 'all-offense': {
+        return offSnaps != null ? { snaps: offSnaps } : null
+      }
       case 'passing': {
         const s = offenseByPlayer.get(playerId)
-        return s && { comp: s.completions, att: s.attempts, yds: s.passing_yards, td: s.passing_tds, int: s.passing_interceptions }
+        return s && { comp: s.completions, att: s.attempts, yds: s.passing_yards, td: s.passing_tds, int: s.passing_interceptions, snaps: offSnaps }
       }
       case 'receiving': {
         const s = offenseByPlayer.get(playerId)
-        return s && { rec: s.receptions, targets: s.targets, yds: s.receiving_yards, td: s.receiving_tds }
+        return s && { rec: s.receptions, targets: s.targets, yds: s.receiving_yards, td: s.receiving_tds, snaps: offSnaps }
       }
       case 'rushing': {
         const s = offenseByPlayer.get(playerId)
-        return s && { att: s.carries, yds: s.rushing_yards, td: s.rushing_tds }
+        return s && { att: s.carries, yds: s.rushing_yards, td: s.rushing_tds, snaps: offSnaps }
       }
       case 'blocking-bonus': {
         const s = offenseByPlayer.get(playerId)
@@ -449,36 +502,40 @@ export default function FantasyScoresPage() {
           avgRush: s.carries ? round2(s.rushing_yards / s.carries) : 0,
           rushAtt: s.carries,
           avgRec: s.receptions ? round2(s.receiving_yards / s.receptions) : 0,
+          snaps: offSnaps,
         }
+      }
+      case 'all-defense': {
+        return defSnaps != null ? { snaps: defSnaps } : null
       }
       case 'pressure': {
         const s = defenseByPlayer.get(playerId)
-        return s && { tfl: s.def_tackles_for_loss, qbHits: s.def_qb_hits, sacks: s.def_sacks }
+        return s && { tfl: s.def_tackles_for_loss, qbHits: s.def_qb_hits, sacks: s.def_sacks, snaps: defSnaps }
       }
       case 'coverage': {
         const s = defenseByPlayer.get(playerId)
-        return s && { tkl: s.def_tackles_solo, ast: s.def_tackles_with_assist, pd: s.def_pass_defended }
+        return s && { tkl: s.def_tackles_solo, ast: s.def_tackles_with_assist, pd: s.def_pass_defended, snaps: defSnaps }
       }
       case 'turnover': {
         const s = defenseByPlayer.get(playerId)
         return (
           s && {
             ff: s.def_fumbles_forced, fr: s.fumble_recovery_opp, int: s.def_interceptions,
-            frYds: s.fumble_recovery_yards_opp, intYds: s.def_interception_yards,
+            frYds: s.fumble_recovery_yards_opp, intYds: s.def_interception_yards, snaps: defSnaps,
           }
         )
       }
       case 'kicking': {
         const s = specialByPlayer.get(playerId)
-        return s && { fgMade: s.fg_made, fgAtt: s.fg_att, xpMade: s.pat_made }
+        return s && { fgMade: s.fg_made, fgAtt: s.fg_att, xpMade: s.pat_made, snaps: stSnaps }
       }
       case 'punting': {
         const s = specialByPlayer.get(playerId)
-        return s && { punts: s.pt_att, puntYds: s.pt_yards, puntAvg: s.pt_att ? round2(s.pt_yards / s.pt_att) : 0 }
+        return s && { punts: s.pt_att, puntYds: s.pt_yards, puntAvg: s.pt_att ? round2(s.pt_yards / s.pt_att) : 0, snaps: stSnaps }
       }
       case 'returning': {
         const s = specialByPlayer.get(playerId)
-        return s && { kr: s.kickoff_returns, krYds: s.kickoff_return_yards, pr: s.punt_returns, prYds: s.punt_return_yards }
+        return s && { kr: s.kickoff_returns, krYds: s.kickoff_return_yards, pr: s.punt_returns, prYds: s.punt_return_yards, snaps: stSnaps }
       }
       case 'coach-head': {
         const t = teamSeasonByAbbr.get(team)
@@ -571,10 +628,11 @@ export default function FantasyScoresPage() {
     }
 
     const col = POINTS_COLUMN[activeSub]
+    const points = activeSub === 'all-offense' ? offensePoints : (fp) => Number(fp[col])
     return fantasyPoints
-      .filter((r) => r[col] != null && Number(r[col]) !== 0)
+      .filter((r) => (activeSub === 'all-offense' ? offensePoints(r) !== 0 : r[col] != null && Number(r[col]) !== 0))
       .slice()
-      .sort((a, b) => Number(b[col]) - Number(a[col]))
+      .sort((a, b) => points(b) - points(a))
       .map((fp) => {
         const player = playersById.get(fp.player_id)
         const team = teamOf(fp.player_id) ?? '???'
@@ -584,15 +642,15 @@ export default function FantasyScoresPage() {
           name: player?.display_name ?? fp.player_id,
           position: player?.position ?? '—',
           team,
-          total: Number(fp[col]),
-          avg: round2(Number(fp[col]) / Number(fp.games)),
+          total: points(fp),
+          avg: round2(points(fp) / Number(fp.games)),
           statValues: statValuesFor(activeSub, fp.player_id, team),
         }
       })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     isWeeks, isCoaching, activeSub, fantasyPoints, teamFantasyPoints, playersById, teamsByAbbr,
-    offenseByPlayer, defenseByPlayer, specialByPlayer, teamSeasonByAbbr, firstDownsByTeam,
+    offenseByPlayer, defenseByPlayer, specialByPlayer, teamSeasonByAbbr, firstDownsByTeam, snapsByPlayer,
   ])
 
   // A second filter dimension on top of whichever leaderboard is showing.
@@ -612,12 +670,17 @@ export default function FantasyScoresPage() {
 
   const visibleRows = filteredRows.slice(0, rowLimit)
 
-  const scrollColumns = isWeeks ? WEEKS.map((w) => ({ key: w, label: `Wk ${w}` })) : STAT_COLUMNS[activeSub]
+  const scrollColumns = isWeeks ? WEEKS.map((w) => ({ key: w, label: `${w}` })) : STAT_COLUMNS[activeSub]
+  // Fewer columns means more room per column -- a 3-4 column stat table
+  // (e.g. Pressure) can afford enough width for "Assists"/"Pt Diff" to sit
+  // on one line, while the 18-column Weeks view just needs enough for a
+  // couple of digits.
+  const scrollColWidth = scrollColWidthFor(scrollColumns.length, isWeeks)
   // table-layout:fixed alone doesn't stop a <table> shrinking below the
   // sum of its declared column widths to fit its container -- an explicit
   // total width forces it, which is what makes the wrapper's
   // overflow-x-auto have real excess width to scroll.
-  const tableWidth = FROZEN_WIDTH + SCROLL_COL_WIDTH * scrollColumns.length
+  const tableWidth = FROZEN_WIDTH + scrollColWidth * scrollColumns.length
 
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-6">
@@ -721,7 +784,7 @@ export default function FantasyScoresPage() {
                   <th
                     key={col.key}
                     className={`${HEADER_TH} border-b border-l border-neutral-200 px-2 py-2 text-right font-medium dark:border-neutral-800`}
-                    style={{ width: SCROLL_COL_WIDTH }}
+                    style={{ width: scrollColWidth }}
                   >
                     {col.label}
                   </th>
