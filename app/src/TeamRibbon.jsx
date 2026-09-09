@@ -152,28 +152,35 @@ function useSyncStatus() {
   return { lastSyncedAt, hours }
 }
 
-// Wraps the NFL logo with a colored ring plus a small hour-count badge at
-// its bottom-left, so data freshness is visible at a glance without a
+// Minutes once the pull is under an hour old (so it doesn't just round down
+// to "0h" right after a fresh sync), hours otherwise.
+function syncBadge(hours) {
+  if (hours < 1) return { value: Math.round(hours * 60), unit: 'm' }
+  return { value: Math.round(hours), unit: 'h' }
+}
+
+// Wraps the NFL logo with a colored ring plus a small time-since-sync badge
+// at its bottom-right, so data freshness is visible at a glance without a
 // separate element that can end up hidden at narrow widths.
 function SyncRing({ children }) {
   const status = useSyncStatus()
   if (!status) return children
 
   const hue = syncHue(status.hours)
-  const hoursLabel = Math.round(status.hours)
+  const { value, unit } = syncBadge(status.hours)
 
   return (
     <span
       className="relative inline-flex shrink-0 rounded-full"
       style={{ boxShadow: `0 0 0 2px hsl(${hue}deg 75% 50%)` }}
-      title={`Last nflverse pull: ${new Date(status.lastSyncedAt).toLocaleString()} (${hoursLabel}h ago)`}
+      title={`Last nflverse pull: ${new Date(status.lastSyncedAt).toLocaleString()} (${value}${unit} ago)`}
     >
       {children}
       <span
-        className="absolute -bottom-1 -left-1 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[9px] font-semibold text-white"
+        className="absolute -bottom-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[9px] font-semibold text-white"
         style={{ backgroundColor: `hsl(${hue}deg 75% 42%)` }}
       >
-        {hoursLabel}
+        {value}
       </span>
     </span>
   )

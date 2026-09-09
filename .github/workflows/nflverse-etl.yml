@@ -2,7 +2,8 @@ name: nflverse ETL
 
 on:
   schedule:
-    - cron: "0 11 * * *"  # ~6-7am US Eastern, daily
+    - cron: "0 12 * * *"  # ~8am US Eastern (shifts to 7am when EST returns in Nov)
+    - cron: "0 0 * * *"   # ~8pm US Eastern (shifts to 7pm when EST returns in Nov)
   workflow_dispatch: {}
 
 env:
