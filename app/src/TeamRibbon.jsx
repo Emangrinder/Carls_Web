@@ -18,10 +18,10 @@ function Logo({ team, className = '' }) {
 // the ends), with a peek at the adjacent option above/below like a
 // rotating dial.
 const NAV_PAGES = [
-  { path: '/', label: 'NFL Teams' },
-  { path: '/rules', label: 'Fantasy Rules' },
   { path: '/matches', label: 'NFL Matches' },
+  { path: '/', label: 'NFL Teams' },
   { path: '/scores', label: 'Fantasy Scores' },
+  { path: '/rules', label: 'Fantasy Rules' },
 ]
 
 function PageSpinner() {
@@ -159,28 +159,36 @@ function syncBadge(hours) {
   return { value: Math.round(hours), unit: 'h' }
 }
 
-// Wraps the NFL logo with a colored ring plus a small time-since-sync badge
-// at its bottom-right, so data freshness is visible at a glance without a
-// separate element that can end up hidden at narrow widths.
+// Wraps the NFL logo with a colored ring plus two small badges -- the
+// elapsed count at bottom-left, its unit (Min/Hrs) at bottom-right -- so
+// data freshness is visible at a glance without a separate element that
+// can end up hidden at narrow widths.
 function SyncRing({ children }) {
   const status = useSyncStatus()
   if (!status) return children
 
   const hue = syncHue(status.hours)
   const { value, unit } = syncBadge(status.hours)
+  const unitLabel = unit === 'm' ? 'Min' : 'Hrs'
 
   return (
     <span
-      className="relative inline-flex shrink-0 rounded-full"
+      className="relative inline-flex shrink-0 items-center justify-center rounded-full p-3"
       style={{ boxShadow: `0 0 0 2px hsl(${hue}deg 75% 50%)` }}
       title={`Last nflverse pull: ${new Date(status.lastSyncedAt).toLocaleString()} (${value}${unit} ago)`}
     >
       {children}
       <span
-        className="absolute -bottom-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[9px] font-semibold text-white"
+        className="absolute bottom-0 left-0 flex h-3 min-w-3 items-center justify-center rounded-full px-1 text-[8px] font-semibold text-white"
         style={{ backgroundColor: `hsl(${hue}deg 75% 42%)` }}
       >
         {value}
+      </span>
+      <span
+        className="absolute bottom-0 right-0 flex h-3 items-center justify-center rounded-full px-1 text-[6px] font-semibold text-white"
+        style={{ backgroundColor: `hsl(${hue}deg 75% 42%)` }}
+      >
+        {unitLabel}
       </span>
     </span>
   )
