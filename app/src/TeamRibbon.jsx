@@ -173,19 +173,19 @@ function SyncRing({ children }) {
 
   return (
     <span
-      className="relative inline-flex shrink-0 items-center justify-center rounded-full p-3"
+      className="relative inline-flex shrink-0 items-center justify-center rounded-full p-2.5"
       style={{ boxShadow: `0 0 0 2px hsl(${hue}deg 75% 50%)` }}
       title={`Last nflverse pull: ${new Date(status.lastSyncedAt).toLocaleString()} (${value}${unit} ago)`}
     >
       {children}
       <span
-        className="absolute bottom-0 left-0 flex h-3 min-w-3 items-center justify-center rounded-full px-1 text-[8px] font-semibold text-white"
+        className="absolute -bottom-1 -left-1 flex h-3 min-w-4 items-center justify-center rounded-full px-1.5 text-[10px] font-semibold text-white"
         style={{ backgroundColor: `hsl(${hue}deg 75% 42%)` }}
       >
         {value}
       </span>
       <span
-        className="absolute bottom-0 right-0 flex h-3 items-center justify-center rounded-full px-1 text-[6px] font-semibold text-white"
+        className="absolute -bottom-1 -right-1 flex h-3 items-center justify-center rounded-full px-1.5 text-[8px] font-semibold text-white"
         style={{ backgroundColor: `hsl(${hue}deg 75% 42%)` }}
       >
         {unitLabel}
