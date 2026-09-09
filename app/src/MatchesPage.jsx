@@ -99,10 +99,15 @@ function MatchRow({ game, teamsByAbbr }) {
         isWinner={homeWinner || !played}
         align="right"
       />
-      {!played && game.spread_line != null && (
+      {!played && (game.spread_line != null || game.total_line != null) && (
         <div className="hidden w-20 shrink-0 text-right text-xs text-neutral-400 sm:block">
-          Line {game.spread_line > 0 ? '+' : ''}
-          {game.spread_line}
+          {game.spread_line != null && (
+            <div>
+              Line {game.spread_line > 0 ? '+' : ''}
+              {game.spread_line}
+            </div>
+          )}
+          {game.total_line != null && <div>O/U {game.total_line}</div>}
         </div>
       )}
     </div>
