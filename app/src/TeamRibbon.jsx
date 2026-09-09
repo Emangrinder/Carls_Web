@@ -121,6 +121,64 @@ function GameTile({ game, className = '' }) {
   )
 }
 
+// Hours-since-sync mapped to a red ("hot" -- the nflverse pull just
+// happened) -> blue ("cold" -- it's been a while) hue, capped at a full day
+// since the ETL cron (.github/workflows/nflverse-etl.yml) runs nightly and
+// anything older than that is already the oldest this indicator should
+// bother distinguishing.
+const SYNC_HUE_CAP_HOURS = 24
+
+function syncHue(hours) {
+  const t = Math.min(Math.max(hours, 0), SYNC_HUE_CAP_HOURS) / SYNC_HUE_CAP_HOURS
+  return Math.round(t * 230) // 0deg = red, 230deg = blue
+}
+
+function useSyncStatus() {
+  const [lastSyncedAt, setLastSyncedAt] = useState(null)
+
+  useEffect(() => {
+    supabase
+      .from('sync_log')
+      .select('last_synced_at')
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (error || !data) return
+        setLastSyncedAt(data.last_synced_at)
+      })
+  }, [])
+
+  if (!lastSyncedAt) return null
+  const hours = (Date.now() - new Date(lastSyncedAt).getTime()) / (1000 * 60 * 60)
+  return { lastSyncedAt, hours }
+}
+
+// Wraps the NFL logo with a colored ring plus a small hour-count badge at
+// its bottom-left, so data freshness is visible at a glance without a
+// separate element that can end up hidden at narrow widths.
+function SyncRing({ children }) {
+  const status = useSyncStatus()
+  if (!status) return children
+
+  const hue = syncHue(status.hours)
+  const hoursLabel = Math.round(status.hours)
+
+  return (
+    <span
+      className="relative inline-flex shrink-0 rounded-full"
+      style={{ boxShadow: `0 0 0 2px hsl(${hue}deg 75% 50%)` }}
+      title={`Last nflverse pull: ${new Date(status.lastSyncedAt).toLocaleString()} (${hoursLabel}h ago)`}
+    >
+      {children}
+      <span
+        className="absolute -bottom-1 -left-1 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[9px] font-semibold text-white"
+        style={{ backgroundColor: `hsl(${hue}deg 75% 42%)` }}
+      >
+        {hoursLabel}
+      </span>
+    </span>
+  )
+}
+
 export default function TeamRibbon() {
   const [games, setGames] = useState([])
 
@@ -155,7 +213,9 @@ export default function TeamRibbon() {
   return (
     <div className="sticky top-0 z-10 flex w-full items-center gap-4 border-b border-neutral-200 bg-white px-4 py-2 dark:border-neutral-800 dark:bg-neutral-950">
       <Link to="/" className="shrink-0 pr-4">
-        <Logo team="NFL" />
+        <SyncRing>
+          <Logo team="NFL" />
+        </SyncRing>
       </Link>
       <PageSpinner />
       <div

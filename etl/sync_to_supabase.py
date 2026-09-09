@@ -264,6 +264,14 @@ def main():
                  "player_season_fantasy_points", "team_season_fantasy_points"]:
         run_psql(f"REFRESH MATERIALIZED VIEW {view};")
 
+    # Written last, only once every table load and view refresh above has
+    # succeeded -- this timestamp is what the frontend's "last synced" tag
+    # reads, so it must mean "the whole pipeline finished," not just "it started."
+    run_psql(
+        "INSERT INTO sync_log (id, last_synced_at) VALUES (true, now()) "
+        "ON CONFLICT (id) DO UPDATE SET last_synced_at = excluded.last_synced_at;"
+    )
+
     print("Done.")
 
 
