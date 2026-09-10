@@ -134,6 +134,7 @@ function buildStatRow(rows) {
   const sum = (key) => rows.reduce((acc, r) => acc + (r[key] ?? 0), 0)
   const puntsSum = sum('punts')
   return {
+    games: n,
     rush_yds_avg: sum('rush_yds') / n,
     pass_yds_avg: sum('pass_yds') / n,
     // Averaged like everything else here (not left as raw totals) so the
@@ -363,9 +364,15 @@ function MatchupStatsTable({ windows, awayAbbr, homeAbbr, heatMode }) {
               <Fragment key={w.label}>
                 <th className="px-2 pb-1 text-right font-normal">
                   <TeamAbbrChip abbr={awayAbbr} />
+                  {w.label === 'Season' && w.away?.games != null && (
+                    <span className="ml-1 text-neutral-400">({w.away.games})</span>
+                  )}
                 </th>
                 <th className="px-2 pb-1 text-right font-normal">
                   <TeamAbbrChip abbr={homeAbbr} />
+                  {w.label === 'Season' && w.home?.games != null && (
+                    <span className="ml-1 text-neutral-400">({w.home.games})</span>
+                  )}
                 </th>
               </Fragment>
             ))}
@@ -662,8 +669,16 @@ export default function GamePage() {
   const homeRecord = recordFor(pregameGames, game.home_team)
   const awayRecord = recordFor(pregameGames, game.away_team)
 
-  const homeSeasonRows = seasonRows.filter((r) => r.team === game.home_team)
-  const awaySeasonRows = seasonRows.filter((r) => r.team === game.away_team)
+  // team_game_stats has one row per SCHEDULED game, not just played ones
+  // (future weeks just coalesce every stat to 0 rather than being absent --
+  // see supabase/migrations/0006_defense_scores_share_stats.sql), so an
+  // unfiltered seasonRows in week 1 would divide by 17 games instead of the
+  // 1 actually played. recordGames is already scored-games-only for these
+  // two teams this season (used for the kickoff record above), so reuse it
+  // here as the played-game filter.
+  const playedGameIds = new Set(recordGames.map((g) => g.game_id))
+  const homeSeasonRows = seasonRows.filter((r) => r.team === game.home_team && playedGameIds.has(r.game_id))
+  const awaySeasonRows = seasonRows.filter((r) => r.team === game.away_team && playedGameIds.has(r.game_id))
   const isWeekOne = game.game_type === 'REG' && game.week === 1
   let homePregameRows = isWeekOne ? [] : homeSeasonRows.filter((r) => r.week < game.week)
   let awayPregameRows = isWeekOne ? [] : awaySeasonRows.filter((r) => r.week < game.week)
