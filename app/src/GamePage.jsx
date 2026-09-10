@@ -74,24 +74,40 @@ function weekLabel(game) {
 // season stats table, so this page reads as the same "language" -- just
 // against a single team's own numbers per window instead of a for/against
 // split.
+// `value` is only set on rows with one plain number to show -- the three
+// combined "X/Y" rows (Turnovers, Pass/Rush TD, Sacks/QB Hits) have no
+// single number a heat map could meaningfully color, so they're left
+// without one and just render uncolored when heat mode is on.
 const STAT_ROWS = [
-  { label: 'Rush Yds Avg', render: (s) => fmtAvg(s.rush_yds_avg) },
-  { label: 'Pass Yds Avg', render: (s) => fmtAvg(s.pass_yds_avg) },
+  { label: 'Rush Yds Avg', value: (s) => s.rush_yds_avg, render: (s) => fmtAvg(s.rush_yds_avg) },
+  { label: 'Pass Yds Avg', value: (s) => s.pass_yds_avg, render: (s) => fmtAvg(s.pass_yds_avg) },
   { label: 'Turnovers [I/F]', render: (s) => `${fmtCount(s.turnovers_int)}/${fmtCount(s.turnovers_fumble)}` },
   { label: 'Pass/Rush TD', render: (s) => `${fmtCount(s.pass_td)}/${fmtCount(s.rush_td)}` },
   { label: 'Sacks/QB Hits', render: (s) => `${fmtCount(s.sacks)}/${fmtCount(s.qb_hits)}` },
-  { label: 'Punts Avg', render: (s) => fmtAvg(s.punts_avg) },
+  { label: 'Punts Avg', value: (s) => s.punts_avg, render: (s) => fmtAvg(s.punts_avg) },
   // punt_return_pct_for is genuinely an against-type stat despite the name
   // (it's the opponent's return rate on THIS team's own punts -- see the
   // punt_return_pct_for/_against comment on TeamPage.jsx's STAT_ROWS), so
   // labeling it plainly "Punt Return %" here reads as this team's own
   // return production, which it isn't.
-  { label: 'Opp PR %', render: (s) => fmtPct(s.punt_return_pct_for) },
-  { label: 'Kick Return Yds Avg', render: (s) => fmtAvg(s.kick_return_yards_avg) },
-  { label: 'Punt Return Yds Avg', render: (s) => fmtAvg(s.punt_return_yards_avg) },
-  { label: 'Offensive Snaps Avg', render: (s) => fmtAvg(s.offense_snaps_avg) },
-  { label: 'Defensive Snaps Avg', render: (s) => fmtAvg(s.defense_snaps_avg) },
+  { label: 'Opp PR %', value: (s) => s.punt_return_pct_for, render: (s) => fmtPct(s.punt_return_pct_for) },
+  { label: 'Kick Return Yds Avg', value: (s) => s.kick_return_yards_avg, render: (s) => fmtAvg(s.kick_return_yards_avg) },
+  { label: 'Punt Return Yds Avg', value: (s) => s.punt_return_yards_avg, render: (s) => fmtAvg(s.punt_return_yards_avg) },
+  { label: 'Offensive Snaps Avg', value: (s) => s.offense_snaps_avg, render: (s) => fmtAvg(s.offense_snaps_avg) },
+  { label: 'Defensive Snaps Avg', value: (s) => s.defense_snaps_avg, render: (s) => fmtAvg(s.defense_snaps_avg) },
 ]
+
+// Same red->green interpolation as Fantasy Scores' heat map (FantasyScoresPage.jsx),
+// just scoped per-row here instead of per-column -- each STAT_ROW's own six
+// away/home x pre-game/season/game cells are compared against each other,
+// since that's the comparison this table is actually for.
+function heatColor(value, range) {
+  if (value == null || typeof value !== 'number' || Number.isNaN(value) || !range || range.max === range.min) {
+    return undefined
+  }
+  const t = Math.min(Math.max((value - range.min) / (range.max - range.min), 0), 1)
+  return `hsla(${t * 120}, 75%, 45%, 0.32)`
+}
 
 // Collapses a set of team_game_stats rows (all belonging to one team) into
 // the same field shape team_season_stats uses (*_avg fields, summed counts,
@@ -276,7 +292,26 @@ function TeamAbbrChip({ abbr }) {
   )
 }
 
-function MatchupStatsTable({ windows, awayAbbr, homeAbbr }) {
+function MatchupStatsTable({ windows, awayAbbr, homeAbbr, heatMode }) {
+  // Per-row min/max across every cell in that row (both teams, every
+  // window) -- rows with no `value` accessor (the combined "X/Y" ones)
+  // just get an empty range, so heatColor's null check leaves them plain.
+  function rowRange(row) {
+    if (!row.value) return null
+    let min = Infinity
+    let max = -Infinity
+    for (const w of windows) {
+      for (const side of [w.away, w.home]) {
+        if (!side) continue
+        const v = row.value(side)
+        if (typeof v !== 'number' || Number.isNaN(v)) continue
+        if (v < min) min = v
+        if (v > max) max = v
+      }
+    }
+    return min <= max ? { min, max } : null
+  }
+
   return (
     <div className="mb-8 overflow-x-auto">
       <table className="w-full min-w-[640px] border-collapse text-sm">
@@ -304,21 +339,30 @@ function MatchupStatsTable({ windows, awayAbbr, homeAbbr }) {
           </tr>
         </thead>
         <tbody>
-          {STAT_ROWS.map((row) => (
+          {STAT_ROWS.map((row) => {
+            const range = heatMode ? rowRange(row) : null
+            return (
             <tr key={row.label} className="border-b border-neutral-100 dark:border-neutral-900">
               <td className="py-1.5 text-neutral-500">{row.label}</td>
               {windows.map((w) => (
                 <Fragment key={w.label}>
-                  <td className="px-2 py-1.5 text-right tabular-nums">
+                  <td
+                    className="px-2 py-1.5 text-right tabular-nums"
+                    style={{ backgroundColor: heatMode && w.away ? heatColor(row.value?.(w.away), range) : undefined }}
+                  >
                     {w.away ? row.render(w.away) : '—'}
                   </td>
-                  <td className="px-2 py-1.5 text-right tabular-nums">
+                  <td
+                    className="px-2 py-1.5 text-right tabular-nums"
+                    style={{ backgroundColor: heatMode && w.home ? heatColor(row.value?.(w.home), range) : undefined }}
+                  >
                     {w.home ? row.render(w.home) : '—'}
                   </td>
                 </Fragment>
               ))}
             </tr>
-          ))}
+            )
+          })}
         </tbody>
       </table>
     </div>
@@ -445,6 +489,7 @@ export default function GamePage() {
   const [specialTeams, setSpecialTeams] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [heatMode, setHeatMode] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -743,10 +788,24 @@ export default function GamePage() {
         )}
       </div>
 
-      <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-neutral-500">Team Stats</h2>
+      <div className="mb-2 flex items-center justify-between">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">Team Stats</h2>
+        <button
+          type="button"
+          onClick={() => setHeatMode((v) => !v)}
+          className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+            heatMode
+              ? 'bg-neutral-900 text-white dark:bg-white dark:text-neutral-900'
+              : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-700'
+          }`}
+        >
+          Heat
+        </button>
+      </div>
       <MatchupStatsTable
         awayAbbr={game.away_team}
         homeAbbr={game.home_team}
+        heatMode={heatMode}
         windows={[
           { label: isWeekOne ? `Pre-game (${game.season - 1})` : 'Pre-game', away: awayPregameStats, home: homePregameStats },
           { label: 'Season', away: awaySeasonStats, home: homeSeasonStats },
