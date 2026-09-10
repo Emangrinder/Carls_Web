@@ -84,19 +84,19 @@ const STAT_ROWS = [
   { label: 'Rush Yds Avg', value: (s) => s.rush_yds_avg, render: (s) => fmtAvg(s.rush_yds_avg) },
   { label: 'Pass Yds Avg', value: (s) => s.pass_yds_avg, render: (s) => fmtAvg(s.pass_yds_avg) },
   {
-    label: 'Turnovers [I/F]',
+    label: 'Turnovers [I/F] Avg',
     value: (s) => (s.turnovers_int ?? 0) + (s.turnovers_fumble ?? 0),
-    parts: (s) => [fmtCount(s.turnovers_int), fmtCount(s.turnovers_fumble)],
+    parts: (s) => [fmtAvg(s.turnovers_int), fmtAvg(s.turnovers_fumble)],
   },
   {
-    label: 'Pass/Rush TD',
+    label: 'Pass/Rush TD Avg',
     value: (s) => (s.pass_td ?? 0) + (s.rush_td ?? 0),
-    parts: (s) => [fmtCount(s.pass_td), fmtCount(s.rush_td)],
+    parts: (s) => [fmtAvg(s.pass_td), fmtAvg(s.rush_td)],
   },
   {
-    label: 'Sacks/QB Hits',
+    label: 'Sacks/QB Hits Avg',
     value: (s) => (s.sacks ?? 0) + (s.qb_hits ?? 0),
-    parts: (s) => [fmtCount(s.sacks), fmtCount(s.qb_hits)],
+    parts: (s) => [fmtAvg(s.sacks), fmtAvg(s.qb_hits)],
   },
   { label: 'Punts Avg', value: (s) => s.punts_avg, render: (s) => fmtAvg(s.punts_avg) },
   // punt_return_pct_for is genuinely an against-type stat despite the name
@@ -136,12 +136,16 @@ function buildStatRow(rows) {
   return {
     rush_yds_avg: sum('rush_yds') / n,
     pass_yds_avg: sum('pass_yds') / n,
-    turnovers_int: sum('ints_thrown'),
-    turnovers_fumble: sum('fumbles_lost'),
-    pass_td: sum('pass_td'),
-    rush_td: sum('rush_td'),
-    sacks: sum('sacks'),
-    qb_hits: sum('qb_hits'),
+    // Averaged like everything else here (not left as raw totals) so the
+    // Pre-game/Season columns are actually comparable to the single-game
+    // Game column instead of a season total sitting next to one game's
+    // count -- dividing by n=1 for the Game window is a no-op.
+    turnovers_int: sum('ints_thrown') / n,
+    turnovers_fumble: sum('fumbles_lost') / n,
+    pass_td: sum('pass_td') / n,
+    rush_td: sum('rush_td') / n,
+    sacks: sum('sacks') / n,
+    qb_hits: sum('qb_hits') / n,
     punts_avg: puntsSum / n,
     punt_return_pct_for: puntsSum ? Math.round((1000 * sum('pt_returned')) / puntsSum) / 10 : null,
     kick_return_yards_avg: sum('kick_return_yards') / n,
