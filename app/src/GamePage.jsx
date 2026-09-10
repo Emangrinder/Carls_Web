@@ -74,16 +74,30 @@ function weekLabel(game) {
 // season stats table, so this page reads as the same "language" -- just
 // against a single team's own numbers per window instead of a for/against
 // split.
-// `value` is only set on rows with one plain number to show -- the three
-// combined "X/Y" rows (Turnovers, Pass/Rush TD, Sacks/QB Hits) have no
-// single number a heat map could meaningfully color, so they're left
-// without one and just render uncolored when heat mode is on.
+// `value` drives the heat map -- for the three combined "X/Y" rows
+// (Turnovers, Pass/Rush TD, Sacks/QB Hits) it's the sum of both halves,
+// since there's no single number to compare row-wide otherwise. `parts`
+// splits those same rows into two side-by-side values within one cell
+// (both halves share the one color the summed value earns), instead of
+// `render`'s single joined "X/Y" string.
 const STAT_ROWS = [
   { label: 'Rush Yds Avg', value: (s) => s.rush_yds_avg, render: (s) => fmtAvg(s.rush_yds_avg) },
   { label: 'Pass Yds Avg', value: (s) => s.pass_yds_avg, render: (s) => fmtAvg(s.pass_yds_avg) },
-  { label: 'Turnovers [I/F]', render: (s) => `${fmtCount(s.turnovers_int)}/${fmtCount(s.turnovers_fumble)}` },
-  { label: 'Pass/Rush TD', render: (s) => `${fmtCount(s.pass_td)}/${fmtCount(s.rush_td)}` },
-  { label: 'Sacks/QB Hits', render: (s) => `${fmtCount(s.sacks)}/${fmtCount(s.qb_hits)}` },
+  {
+    label: 'Turnovers [I/F]',
+    value: (s) => (s.turnovers_int ?? 0) + (s.turnovers_fumble ?? 0),
+    parts: (s) => [fmtCount(s.turnovers_int), fmtCount(s.turnovers_fumble)],
+  },
+  {
+    label: 'Pass/Rush TD',
+    value: (s) => (s.pass_td ?? 0) + (s.rush_td ?? 0),
+    parts: (s) => [fmtCount(s.pass_td), fmtCount(s.rush_td)],
+  },
+  {
+    label: 'Sacks/QB Hits',
+    value: (s) => (s.sacks ?? 0) + (s.qb_hits ?? 0),
+    parts: (s) => [fmtCount(s.sacks), fmtCount(s.qb_hits)],
+  },
   { label: 'Punts Avg', value: (s) => s.punts_avg, render: (s) => fmtAvg(s.punts_avg) },
   // punt_return_pct_for is genuinely an against-type stat despite the name
   // (it's the opponent's return rate on THIS team's own punts -- see the
@@ -312,6 +326,21 @@ function MatchupStatsTable({ windows, awayAbbr, homeAbbr, heatMode }) {
     return min <= max ? { min, max } : null
   }
 
+  // Rows with `parts` show two values side by side in one cell (both
+  // sharing whatever color the cell's own background already got from the
+  // summed `value` above) instead of `render`'s single joined string.
+  function renderCell(row, side) {
+    if (!side) return '—'
+    if (!row.parts) return row.render(side)
+    const [a, b] = row.parts(side)
+    return (
+      <div className="flex justify-end divide-x divide-neutral-300 dark:divide-neutral-700">
+        <span className="pr-1.5">{a}</span>
+        <span className="pl-1.5">{b}</span>
+      </div>
+    )
+  }
+
   return (
     <div className="mb-8 overflow-x-auto">
       <table className="w-full min-w-[640px] border-collapse text-sm">
@@ -350,13 +379,13 @@ function MatchupStatsTable({ windows, awayAbbr, homeAbbr, heatMode }) {
                     className="px-2 py-1.5 text-right tabular-nums"
                     style={{ backgroundColor: heatMode && w.away ? heatColor(row.value?.(w.away), range) : undefined }}
                   >
-                    {w.away ? row.render(w.away) : '—'}
+                    {renderCell(row, w.away)}
                   </td>
                   <td
                     className="px-2 py-1.5 text-right tabular-nums"
                     style={{ backgroundColor: heatMode && w.home ? heatColor(row.value?.(w.home), range) : undefined }}
                   >
-                    {w.home ? row.render(w.home) : '—'}
+                    {renderCell(row, w.home)}
                   </td>
                 </Fragment>
               ))}
