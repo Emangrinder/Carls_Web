@@ -81,7 +81,12 @@ const STAT_ROWS = [
   { label: 'Pass/Rush TD', render: (s) => `${fmtCount(s.pass_td)}/${fmtCount(s.rush_td)}` },
   { label: 'Sacks/QB Hits', render: (s) => `${fmtCount(s.sacks)}/${fmtCount(s.qb_hits)}` },
   { label: 'Punts Avg', render: (s) => fmtAvg(s.punts_avg) },
-  { label: 'Punt Return %', render: (s) => fmtPct(s.punt_return_pct_for) },
+  // punt_return_pct_for is genuinely an against-type stat despite the name
+  // (it's the opponent's return rate on THIS team's own punts -- see the
+  // punt_return_pct_for/_against comment on TeamPage.jsx's STAT_ROWS), so
+  // labeling it plainly "Punt Return %" here reads as this team's own
+  // return production, which it isn't.
+  { label: 'Opp PR %', render: (s) => fmtPct(s.punt_return_pct_for) },
   { label: 'Kick Return Yds Avg', render: (s) => fmtAvg(s.kick_return_yards_avg) },
   { label: 'Punt Return Yds Avg', render: (s) => fmtAvg(s.punt_return_yards_avg) },
   { label: 'Offensive Snaps Avg', render: (s) => fmtAvg(s.offense_snaps_avg) },

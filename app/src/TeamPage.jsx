@@ -79,7 +79,12 @@ const STAT_ROWS = [
     ],
   },
   { label: 'Punts Avg', render: (s) => [fmtAvg(s.punts_avg), fmtAvg(s.punts_allowed_avg)] },
-  { label: 'Punt Return %', render: (s) => [fmtPct(s.punt_return_pct_for), fmtPct(s.punt_return_pct_against)] },
+  // punt_return_pct_for/_against are named backwards from every other _for/
+  // _against pair here: _for is the opponent's return rate on this team's
+  // OWN punts, and _against is this team's OWN return rate on punts it
+  // faced -- so the values are swapped below to land under the correct
+  // For/Against column instead of reproducing that naming flip in the UI.
+  { label: 'Punt Return %', render: (s) => [fmtPct(s.punt_return_pct_against), fmtPct(s.punt_return_pct_for)] },
   { label: 'Kick Return Yds Avg', render: (s) => [fmtAvg(s.kick_return_yards_avg), fmtAvg(s.kick_return_yards_allowed_avg)] },
   { label: 'Punt Return Yds Avg', render: (s) => [fmtAvg(s.punt_return_yards_avg), fmtAvg(s.punt_return_yards_allowed_avg)] },
   { label: 'Offensive Snaps Avg', render: (s) => [fmtAvg(s.offense_snaps_avg), fmtAvg(s.offense_snaps_allowed_avg)] },
