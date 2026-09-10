@@ -2,8 +2,12 @@ name: nflverse ETL
 
 on:
   schedule:
-    - cron: "0 12 * * *"  # ~8am US Eastern (shifts to 7am when EST returns in Nov)
-    - cron: "0 0 * * *"   # ~8pm US Eastern (shifts to 7pm when EST returns in Nov)
+    # :00 UTC and 12:00 UTC are two of the most oversubscribed cron slots on
+    # all of GitHub Actions -- runs queued there got delayed by 3-4+ hours in
+    # practice (a "0 0" run once landed at 03:54 UTC, nearly 4am). Offsetting
+    # to :13 avoids that queue without meaningfully changing the local time.
+    - cron: "13 12 * * *"  # ~8am US Eastern (shifts to 7am when EST returns in Nov)
+    - cron: "13 0 * * *"   # ~8pm US Eastern (shifts to 7pm when EST returns in Nov)
   workflow_dispatch: {}
 
 env:
