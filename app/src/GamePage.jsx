@@ -325,16 +325,16 @@ function MatchNavBox({ game, direction }) {
       className="flex shrink-0 items-center gap-1 rounded-lg border border-neutral-200 px-2 py-2 text-neutral-400 transition-colors hover:border-neutral-400 hover:text-neutral-600 dark:border-neutral-800 dark:hover:border-neutral-600 dark:hover:text-neutral-300"
     >
       {direction === 'prev' && <span className="text-lg leading-none">‹</span>}
-      <span className="flex items-center -space-x-2">
+      <span className="flex flex-col items-center gap-0.5">
         <img
           src={`${import.meta.env.BASE_URL}logos/${game.away_team}.png`}
           alt={game.away_team}
-          className="h-6 w-6 shrink-0 object-contain"
+          className="h-5 w-5 shrink-0 object-contain"
         />
         <img
           src={`${import.meta.env.BASE_URL}logos/${game.home_team}.png`}
           alt={game.home_team}
-          className="h-6 w-6 shrink-0 object-contain"
+          className="h-5 w-5 shrink-0 object-contain"
         />
       </span>
       {direction === 'next' && <span className="text-lg leading-none">›</span>}
