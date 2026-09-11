@@ -2,12 +2,22 @@ name: nflverse ETL
 
 on:
   schedule:
-    # :00 UTC and 12:00 UTC are two of the most oversubscribed cron slots on
-    # all of GitHub Actions -- runs queued there got delayed by 3-4+ hours in
-    # practice (a "0 0" run once landed at 03:54 UTC, nearly 4am). Offsetting
-    # to :13 avoids that queue without meaningfully changing the local time.
+    # Offsetting off :00/:12:00 UTC (see below) cut the multi-hour delays but
+    # didn't stop GitHub from dropping a scheduled run outright sometimes --
+    # confirmed via `gh run list`: some days only one of these two fires at
+    # all, not just late, with no run record for the other. GitHub Actions'
+    # own docs describe `schedule` as best-effort with no delivery guarantee,
+    # especially under load, so there's no config that fixes this outright.
+    # Each time below is backed by a second, unconditional cron ~15 min
+    # later -- native `schedule` triggers have no "only if the other one got
+    # dropped" logic, so both will typically fire every day, not just as an
+    # occasional retry. sync_to_supabase.py is a full truncate+reload each
+    # run, so the redundant run is harmless, just a few extra Actions
+    # minutes/day in exchange for actually getting two pulls most days.
     - cron: "13 12 * * *"  # ~8am US Eastern (shifts to 7am when EST returns in Nov)
+    - cron: "28 12 * * *"  # backup for the 8am run
     - cron: "13 0 * * *"   # ~8pm US Eastern (shifts to 7pm when EST returns in Nov)
+    - cron: "28 0 * * *"   # backup for the 8pm run
   workflow_dispatch: {}
 
 env:

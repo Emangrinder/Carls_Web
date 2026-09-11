@@ -1,10 +1,29 @@
-import { Fragment, useEffect, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { supabase } from './supabaseClient'
 import LoadingSpinner from './LoadingSpinner'
 import { TEAM_COLORS, hexToRgba, contrastTextColor } from './teamColors'
 
 const POSTSEASON_LABELS = { WC: 'Wild Card', DIV: 'Divisional', CON: 'Conference Championship', SB: 'Super Bowl' }
+const REG_WEEKS = Array.from({ length: 18 }, (_, i) => i + 1)
+const POSTSEASON_ORDER = ['WC', 'DIV', 'CON', 'SB']
+
+// One flat ordering for the whole season -- REG weeks 1-18 in order, then
+// the postseason rounds, each week/round's own games sorted the same way
+// MatchesPage sorts them (by kickoff). Flattening it like this means "next"
+// off the last game of a week is naturally the first game of the next week
+// (or round) for free, instead of needing separate week-boundary logic.
+function buildMatchOrder(games) {
+  const sortByKickoff = (rows) =>
+    [...rows].sort((a, b) => {
+      const dateDiff = (a.gameday ?? '9999').localeCompare(b.gameday ?? '9999')
+      if (dateDiff !== 0) return dateDiff
+      return (a.gametime ?? '99:99').localeCompare(b.gametime ?? '99:99')
+    })
+  const regGames = REG_WEEKS.flatMap((w) => sortByKickoff(games.filter((g) => g.game_type === 'REG' && g.week === w)))
+  const postGames = POSTSEASON_ORDER.flatMap((t) => sortByKickoff(games.filter((g) => g.game_type === t)))
+  return [...regGames, ...postGames]
+}
 
 const INJURY_STATUS_STYLES = {
   Out: 'text-red-600 dark:text-red-400',
@@ -293,6 +312,36 @@ function TeamHeader({ abbr, name, score, isWinner, played, align }) {
   )
 }
 
+// Prev/next matchup control -- a small box holding both teams' logos,
+// linking to that game. Renders an invisible placeholder (not nothing) at
+// either end of the season so the header row's spacing doesn't jump when
+// there's no game to go to.
+function MatchNavBox({ game, direction }) {
+  if (!game) return <div className="h-11 w-16 shrink-0" />
+  return (
+    <Link
+      to={`/matches/${game.game_id}`}
+      title={`${game.away_team} @ ${game.home_team}`}
+      className="flex shrink-0 items-center gap-1 rounded-lg border border-neutral-200 px-2 py-2 text-neutral-400 transition-colors hover:border-neutral-400 hover:text-neutral-600 dark:border-neutral-800 dark:hover:border-neutral-600 dark:hover:text-neutral-300"
+    >
+      {direction === 'prev' && <span className="text-lg leading-none">‹</span>}
+      <span className="flex items-center -space-x-2">
+        <img
+          src={`${import.meta.env.BASE_URL}logos/${game.away_team}.png`}
+          alt={game.away_team}
+          className="h-6 w-6 shrink-0 object-contain"
+        />
+        <img
+          src={`${import.meta.env.BASE_URL}logos/${game.home_team}.png`}
+          alt={game.home_team}
+          className="h-6 w-6 shrink-0 object-contain"
+        />
+      </span>
+      {direction === 'next' && <span className="text-lg leading-none">›</span>}
+    </Link>
+  )
+}
+
 // One table, three time windows (Pre-game / Season / Game) each split into
 // an away/home sub-column -- matches the grouped-column convention already
 // used by the league table (TeamStatsTable's For/Against columns).
@@ -527,6 +576,7 @@ export default function GamePage() {
   const [offense, setOffense] = useState([])
   const [defense, setDefense] = useState([])
   const [specialTeams, setSpecialTeams] = useState([])
+  const [seasonScheduleGames, setSeasonScheduleGames] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [heatMode, setHeatMode] = useState(false)
@@ -592,15 +642,23 @@ export default function GamePage() {
             .from('player_special_teams_stats')
             .select('*, players(display_name, position)')
             .eq('game_id', gameId),
-        ]).then(([teamsRes, tgs, seasonGameRows, recGames, inj, off, def, st]) => {
+          // Every game this whole season, any team -- used purely to build
+          // the prev/next matchup order (see buildMatchOrder below), not
+          // team-scoped like the other season queries above.
+          supabase
+            .from('games')
+            .select('game_id, week, game_type, gameday, gametime, home_team, away_team')
+            .eq('season', gameData.season),
+        ]).then(([teamsRes, tgs, seasonGameRows, recGames, inj, off, def, st, scheduleRes]) => {
           if (cancelled) return
           const err =
             teamsRes.error || tgs.error || seasonGameRows.error || recGames.error || inj.error ||
-            off.error || def.error || st.error
+            off.error || def.error || st.error || scheduleRes.error
           if (err) {
             setError(err.message)
           } else {
             setTeams(teamsRes.data)
+            setSeasonScheduleGames(scheduleRes.data)
             setTeamGameStats(tgs.data)
             setSeasonRows(seasonGameRows.data)
             setRecordGames(recGames.data)
@@ -650,6 +708,12 @@ export default function GamePage() {
       cancelled = true
     }
   }, [gameId])
+
+  // Above the loading/error guards -- hooks can't be called conditionally.
+  const matchOrder = useMemo(() => buildMatchOrder(seasonScheduleGames), [seasonScheduleGames])
+  const matchIndex = matchOrder.findIndex((g) => g.game_id === gameId)
+  const prevMatch = matchIndex > 0 ? matchOrder[matchIndex - 1] : null
+  const nextMatch = matchIndex !== -1 && matchIndex < matchOrder.length - 1 ? matchOrder[matchIndex + 1] : null
 
   if (loading) return <LoadingSpinner full />
   if (error) return <p className="p-6 text-sm text-red-500">Error: {error}</p>
@@ -773,6 +837,7 @@ export default function GamePage() {
       <div className="mb-6 text-sm text-neutral-500">{fmtKickoff(game.gameday, game.weekday, game.gametime)}</div>
 
       <div className="mb-8 flex items-center justify-between gap-4">
+        <MatchNavBox game={prevMatch} direction="prev" />
         <TeamHeader
           abbr={game.away_team}
           name={teamsByAbbr.get(game.away_team)?.team_name}
@@ -790,6 +855,7 @@ export default function GamePage() {
           played={played}
           align="right"
         />
+        <MatchNavBox game={nextMatch} direction="next" />
       </div>
 
       {/* Pregame context: record entering kickoff + line, always useful whether or not the game has been played */}
