@@ -59,6 +59,30 @@ function useStickyScrollHeight() {
 const SEASONS = [2026, 2025, 2024]
 const DEFAULT_SEASON = 2025
 
+// team_season_stats exposes these as season totals (correct as totals --
+// unlike the *_avg columns, they're never diluted by unplayed games,
+// since sum() just adds 0 for a game that hasn't happened). But a raw
+// total isn't a fair team-to-team comparison once teams have played
+// different numbers of games (byes, mid-season), so the Defense/Scores
+// tables want these as a rate -- divide by the view's own games_played,
+// which IS already correctly played-games-only.
+const PER_GAME_FIELDS = [
+  'sacks', 'sacks_allowed', 'qb_hits', 'qb_hits_allowed', 'tfl', 'tfl_allowed',
+  'pass_defended', 'pass_defended_allowed', 'def_ints', 'def_ints_allowed',
+  'rec_td', 'rec_td_allowed', 'rush_td', 'rush_td_allowed',
+  'st_td', 'st_td_allowed', 'def_td', 'def_td_allowed', 'fg_made', 'fg_made_allowed',
+]
+
+function withPerGameRates(rows) {
+  return rows.map((r) => {
+    const out = { ...r }
+    for (const key of PER_GAME_FIELDS) {
+      out[key] = r.games_played ? r[key] / r.games_played : null
+    }
+    return out
+  })
+}
+
 // Clicking the Conf header cycles null -> 'AFC' -> 'NFC' -> null; whichever
 // one is active sorts to the top of the table (and tints the header to
 // match), rather than always forcing AFC first regardless of which the
@@ -76,10 +100,6 @@ function fmtDiff(n) {
 
 function fmtAvg(n) {
   return n == null ? '—' : n.toFixed(1)
-}
-
-function fmtCount(n) {
-  return n ?? '—'
 }
 
 function fmtPct(n) {
@@ -108,9 +128,9 @@ const TABLES = {
         sortMode: 'sum',
         sortFields: ['sacks', 'qb_hits', 'tfl'],
         stats: [
-          { key: 'sacks', against: 'sacks_allowed', label: 'Sacks', fmt: fmtCount },
-          { key: 'qb_hits', against: 'qb_hits_allowed', label: 'QB Hits', fmt: fmtCount },
-          { key: 'tfl', against: 'tfl_allowed', label: 'TFL', fmt: fmtCount },
+          { key: 'sacks', against: 'sacks_allowed', label: 'Sacks Avg', fmt: fmtAvg },
+          { key: 'qb_hits', against: 'qb_hits_allowed', label: 'QB Hits Avg', fmt: fmtAvg },
+          { key: 'tfl', against: 'tfl_allowed', label: 'TFL Avg', fmt: fmtAvg },
         ],
       },
       {
@@ -118,8 +138,10 @@ const TABLES = {
         sortMode: 'sum',
         sortFields: ['pass_defended', 'def_ints'],
         stats: [
-          { key: 'pass_defended', against: 'pass_defended_allowed', label: 'PD', fmt: fmtCount },
-          { key: 'def_ints', against: 'def_ints_allowed', label: 'INT', fmt: fmtCount },
+          { key: 'pass_defended', against: 'pass_defended_allowed', label: 'PD Avg', fmt: fmtAvg },
+          { key: 'def_ints', against: 'def_ints_allowed', label: 'INT Avg', fmt: fmtAvg },
+          // Already a rate (completions/attempts), not diluted by games
+          // played the way the raw counts above were -- left as-is.
           { key: 'comp_pct_for', against: 'comp_pct_against', label: 'Comp %', fmt: fmtPct },
         ],
       },
@@ -128,11 +150,11 @@ const TABLES = {
   scores: {
     label: 'Scores',
     groups: [
-      { label: 'Receiving TD', sortMode: 'diff', stats: [{ key: 'rec_td', against: 'rec_td_allowed', label: '', fmt: fmtCount }] },
-      { label: 'Rushing TD', sortMode: 'diff', stats: [{ key: 'rush_td', against: 'rush_td_allowed', label: '', fmt: fmtCount }] },
-      { label: 'Special Teams TD', sortMode: 'diff', stats: [{ key: 'st_td', against: 'st_td_allowed', label: '', fmt: fmtCount }] },
-      { label: 'Defensive TD', sortMode: 'diff', stats: [{ key: 'def_td', against: 'def_td_allowed', label: '', fmt: fmtCount }] },
-      { label: 'Field Goals', sortMode: 'diff', stats: [{ key: 'fg_made', against: 'fg_made_allowed', label: '', fmt: fmtCount }] },
+      { label: 'Receiving TD Avg', sortMode: 'diff', stats: [{ key: 'rec_td', against: 'rec_td_allowed', label: '', fmt: fmtAvg }] },
+      { label: 'Rushing TD Avg', sortMode: 'diff', stats: [{ key: 'rush_td', against: 'rush_td_allowed', label: '', fmt: fmtAvg }] },
+      { label: 'Special Teams TD Avg', sortMode: 'diff', stats: [{ key: 'st_td', against: 'st_td_allowed', label: '', fmt: fmtAvg }] },
+      { label: 'Defensive TD Avg', sortMode: 'diff', stats: [{ key: 'def_td', against: 'def_td_allowed', label: '', fmt: fmtAvg }] },
+      { label: 'Field Goals Avg', sortMode: 'diff', stats: [{ key: 'fg_made', against: 'fg_made_allowed', label: '', fmt: fmtAvg }] },
     ],
   },
 }
@@ -439,7 +461,7 @@ export default function TeamStatsTable() {
       if (err) {
         setError(err.message)
       } else {
-        setRows(statsRes.data)
+        setRows(withPerGameRates(statsRes.data))
         setShareRows(shareRes.data)
       }
       setLoading(false)
