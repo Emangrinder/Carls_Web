@@ -4,14 +4,15 @@ import { supabase } from './supabaseClient'
 import { findCurrentWeek, kickoffMs } from './currentWeek'
 import LoadingSpinner from './LoadingSpinner'
 
-// Every column here is a single differential number -- this team's own
-// season rate minus whatever the opponent's season stats say they give up
-// (or, for the two counting stats below, per-game via games_played, since
+// Every column here is a single differential number -- whatever the
+// opponent's season stats say they give up minus this team's own season
+// rate (or, for the counting stats, per-game via games_played, since
 // team_season_stats stores those as season sums rather than its own _avg
-// column). Positive always means "this team's own side of the ball did
-// more of this than the opponent's numbers suggest is normal for them" --
-// no sign-flipping for stats where more is normally bad (e.g. TO/G,
-// SKA/G), so the column stays a literal for-minus-against read throughout.
+// column). Positive always means "the opponent typically gives up more of
+// this than this team's own normal output" -- i.e. this matchup should
+// push the team above their season average, which is the trend-spotting
+// read this page is for. No sign-flipping per stat (e.g. TO/G, SKA/G), so
+// the column stays a literal against-minus-for read throughout.
 function perGame(row, key) {
   if (!row || !row.games_played) return null
   return row[key] / row.games_played
@@ -26,42 +27,42 @@ const OFFENSE_COLUMNS = [
   {
     key: 'pyd',
     label: 'PYd/G',
-    title: 'Pass Yds/G (this team) minus Pass Yds Allowed/G (opponent)',
-    value: (team, opp) => diff(team.pass_yds_avg, opp.pass_yds_allowed_avg),
+    title: 'Pass Yds Allowed/G (opponent) minus Pass Yds/G (this team)',
+    value: (team, opp) => diff(opp.pass_yds_allowed_avg, team.pass_yds_avg),
   },
   {
     key: 'ryd',
     label: 'RYd/G',
-    title: 'Rush Yds/G (this team) minus Rush Yds Allowed/G (opponent)',
-    value: (team, opp) => diff(team.rush_yds_avg, opp.rush_yds_allowed_avg),
+    title: 'Rush Yds Allowed/G (opponent) minus Rush Yds/G (this team)',
+    value: (team, opp) => diff(opp.rush_yds_allowed_avg, team.rush_yds_avg),
   },
   {
     key: 'cmp_g',
     label: 'CMP/G',
-    title: 'Completions/G (this team) minus Completions Allowed/G (opponent)',
-    value: (team, opp) => diff(team.completions_avg, opp.completions_allowed_avg),
+    title: 'Completions Allowed/G (opponent) minus Completions/G (this team)',
+    value: (team, opp) => diff(opp.completions_allowed_avg, team.completions_avg),
   },
   {
     key: 'cmp',
     label: 'CMP%',
-    title: "This team's completion % minus the opponent defense's completion % allowed",
-    value: (team, opp) => diff(team.comp_pct_for, opp.comp_pct_against),
+    title: "The opponent defense's completion % allowed minus this team's completion %",
+    value: (team, opp) => diff(opp.comp_pct_against, team.comp_pct_for),
     isPct: true,
   },
   {
     key: 'ska',
     label: 'SKA/G',
-    title: "Sacks Allowed/G (this team's O-line) minus Sacks/G (opponent's pass rush)",
-    value: (team, opp) => diff(perGame(team, 'sacks_allowed'), perGame(opp, 'sacks')),
+    title: "Sacks/G (opponent's pass rush) minus Sacks Allowed/G (this team's O-line)",
+    value: (team, opp) => diff(perGame(opp, 'sacks'), perGame(team, 'sacks_allowed')),
   },
   {
     key: 'to',
     label: 'TO/G',
-    title: "Giveaways/G (this team's offense) minus Takeaways/G (opponent's defense)",
+    title: "Takeaways/G (opponent's defense) minus Giveaways/G (this team's offense)",
     value: (team, opp) =>
       diff(
-        (perGame(team, 'turnovers_int') ?? 0) + (perGame(team, 'turnovers_fumble') ?? 0),
         (perGame(opp, 'takeaways_int') ?? 0) + (perGame(opp, 'takeaways_fumble') ?? 0),
+        (perGame(team, 'turnovers_int') ?? 0) + (perGame(team, 'turnovers_fumble') ?? 0),
       ),
   },
 ]
@@ -70,33 +71,33 @@ const DEFENSE_COLUMNS = [
   {
     key: 'sk',
     label: 'SK/G',
-    title: "Sacks/G (this team's defense) minus Sacks Allowed/G (opponent's O-line)",
-    value: (team, opp) => diff(perGame(team, 'sacks'), perGame(opp, 'sacks_allowed')),
+    title: "Sacks Allowed/G (opponent's O-line) minus Sacks/G (this team's defense)",
+    value: (team, opp) => diff(perGame(opp, 'sacks_allowed'), perGame(team, 'sacks')),
   },
   {
     key: 'qbh',
     label: 'QBH/G',
-    title: "QB Hits/G (this team's defense) minus QB Hits Allowed/G (opponent's offense)",
-    value: (team, opp) => diff(perGame(team, 'qb_hits'), perGame(opp, 'qb_hits_allowed')),
+    title: "QB Hits Allowed/G (opponent's offense) minus QB Hits/G (this team's defense)",
+    value: (team, opp) => diff(perGame(opp, 'qb_hits_allowed'), perGame(team, 'qb_hits')),
   },
   {
     key: 'tfl',
     label: 'TFL/G',
-    title: "Tackles For Loss/G (this team's defense) minus TFL Allowed/G (opponent's offense)",
-    value: (team, opp) => diff(perGame(team, 'tfl'), perGame(opp, 'tfl_allowed')),
+    title: "TFL Allowed/G (opponent's offense) minus Tackles For Loss/G (this team's defense)",
+    value: (team, opp) => diff(perGame(opp, 'tfl_allowed'), perGame(team, 'tfl')),
   },
   {
     key: 'int',
     label: 'INT/G',
-    title: "Interceptions/G forced (this team's defense) minus Interceptions/G thrown (opponent's offense)",
-    value: (team, opp) => diff(perGame(team, 'def_ints'), perGame(opp, 'turnovers_int')),
+    title: "Interceptions/G thrown (opponent's offense) minus Interceptions/G forced (this team's defense)",
+    value: (team, opp) => diff(perGame(opp, 'turnovers_int'), perGame(team, 'def_ints')),
   },
   {
     key: 'pd',
     label: 'PD/A',
     title:
-      "Passes Defended per 100 attempts forced (this team's defense) minus Passes Defended per 100 attempts suffered (opponent's QB)",
-    value: (team, opp) => diff(team.pd_forced_pct, opp.pd_suffered_pct),
+      "Passes Defended per 100 attempts suffered (opponent's QB) minus Passes Defended per 100 attempts forced (this team's defense)",
+    value: (team, opp) => diff(opp.pd_suffered_pct, team.pd_forced_pct),
     isPct: true,
   },
 ]
@@ -107,18 +108,29 @@ const SPECIAL_TEAMS_COLUMNS = [
   {
     key: 'kr',
     label: 'KR Yd/G',
-    title: "Kick Return Yds/G (this team) minus Kick Return Yds Allowed/G (opponent's coverage unit)",
-    value: (team, opp) => diff(team.kick_return_yards_avg, opp.kick_return_yards_allowed_avg),
+    title: "Kick Return Yds Allowed/G (opponent's coverage unit) minus Kick Return Yds/G (this team)",
+    value: (team, opp) => diff(opp.kick_return_yards_allowed_avg, team.kick_return_yards_avg),
   },
   {
     key: 'pr',
     label: 'PR Yd/G',
-    title: "Punt Return Yds/G (this team) minus Punt Return Yds Allowed/G (opponent's coverage unit)",
-    value: (team, opp) => diff(team.punt_return_yards_avg, opp.punt_return_yards_allowed_avg),
+    title: "Punt Return Yds Allowed/G (opponent's coverage unit) minus Punt Return Yds/G (this team)",
+    value: (team, opp) => diff(opp.punt_return_yards_allowed_avg, team.punt_return_yards_avg),
   },
 ]
 
 const ALL_COLUMNS = [...OFFENSE_COLUMNS, ...DEFENSE_COLUMNS, ...SPECIAL_TEAMS_COLUMNS]
+
+// Index (within ALL_COLUMNS) where the Defense and Special Teams groups
+// each start -- used to draw a divider on just that column's leading edge,
+// visually separating the three stat groups as you scan across the row.
+const DEFENSE_START = OFFENSE_COLUMNS.length
+const SPECIAL_TEAMS_START = OFFENSE_COLUMNS.length + DEFENSE_COLUMNS.length
+const GROUP_DIVIDER = 'border-l-2 border-neutral-300 dark:border-neutral-700'
+
+function groupStartBorder(index) {
+  return index === DEFENSE_START || index === SPECIAL_TEAMS_START ? GROUP_DIVIDER : ''
+}
 
 function fmtDiff(n, isPct) {
   if (n == null || Number.isNaN(n)) return '—'
@@ -367,10 +379,10 @@ export default function NFLMatchupPage() {
                 <th colSpan={OFFENSE_COLUMNS.length} className="px-2 py-2 text-center font-medium">
                   Offense
                 </th>
-                <th colSpan={DEFENSE_COLUMNS.length} className="px-2 py-2 text-center font-medium">
+                <th colSpan={DEFENSE_COLUMNS.length} className={`${GROUP_DIVIDER} px-2 py-2 text-center font-medium`}>
                   Defense
                 </th>
-                <th colSpan={SPECIAL_TEAMS_COLUMNS.length} className="px-2 py-2 text-center font-medium">
+                <th colSpan={SPECIAL_TEAMS_COLUMNS.length} className={`${GROUP_DIVIDER} px-2 py-2 text-center font-medium`}>
                   Special Teams
                 </th>
               </tr>
@@ -378,10 +390,10 @@ export default function NFLMatchupPage() {
                 <th className={`${STICKY_CELL} left-0`} style={{ width: TEAM_COL_WIDTH }}></th>
                 <th className={STICKY_CELL} style={{ left: TEAM_COL_WIDTH, width: OPP_COL_WIDTH }}></th>
                 <th></th>
-                {ALL_COLUMNS.map((c) => (
+                {ALL_COLUMNS.map((c, i) => (
                   <th
                     key={c.key}
-                    className={`${thBase} px-2 pb-1 text-right font-normal`}
+                    className={`${thBase} ${groupStartBorder(i)} px-2 pb-1 text-right font-normal`}
                     onClick={() => handleSort(c.key)}
                     title={c.title}
                   >
@@ -402,10 +414,10 @@ export default function NFLMatchupPage() {
                   <td className="whitespace-nowrap px-2 py-2 text-xs text-neutral-400">
                     {fmtKickoff(r.game.gameday, r.game.gametime)}
                   </td>
-                  {ALL_COLUMNS.map((c) => {
+                  {ALL_COLUMNS.map((c, i) => {
                     const v = c.value(r.teamStats, r.oppStats)
                     return (
-                      <td key={c.key} className={`px-2 py-2 text-right tabular-nums ${diffColor(v)}`}>
+                      <td key={c.key} className={`${groupStartBorder(i)} px-2 py-2 text-right tabular-nums ${diffColor(v)}`}>
                         {fmtDiff(v, c.isPct)}
                       </td>
                     )
