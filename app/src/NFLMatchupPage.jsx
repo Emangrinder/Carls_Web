@@ -91,6 +91,14 @@ const DEFENSE_COLUMNS = [
     title: "Interceptions/G forced (this team's defense) minus Interceptions/G thrown (opponent's offense)",
     value: (team, opp) => diff(perGame(team, 'def_ints'), perGame(opp, 'turnovers_int')),
   },
+  {
+    key: 'pd',
+    label: 'PD/A',
+    title:
+      "Passes Defended per 100 attempts forced (this team's defense) minus Passes Defended per 100 attempts suffered (opponent's QB)",
+    value: (team, opp) => diff(team.pd_forced_pct, opp.pd_suffered_pct),
+    isPct: true,
+  },
 ]
 
 // Returns are neither this team's offense nor its defense -- their own
@@ -195,18 +203,15 @@ export default function NFLMatchupPage() {
         .eq('game_type', 'REG')
         .eq('week', current.week),
       supabase.from('team_season_stats').select('*').eq('season', current.season),
-      // completions/G isn't a column on team_season_stats -- team_game_stats
-      // already carries per-game completions (granted to anon since
-      // 0006_defense_scores_share_stats.sql), so it's derived here instead
-      // of adding a new column: sum completions per team (by team for its
-      // own, by opponent_team for what it allowed) and divide by that
-      // team's games_played from team_season_stats, which is already the
-      // correct "games actually played" denominator. Summing across every
-      // team_game_stats row (not just played ones) is safe -- an unplayed
-      // game's completions are already 0, same reasoning as 0015's comment.
+      // CMP/G and PD/A aren't columns on team_season_stats -- team_game_stats
+      // already carries per-game completions and attempts (granted to anon
+      // since 0006_defense_scores_share_stats.sql), so both are derived here
+      // instead of adding new columns. Summing across every team_game_stats
+      // row (not just played ones) is safe -- an unplayed game's stats are
+      // already 0, same reasoning as 0015's comment.
       supabase
         .from('team_game_stats')
-        .select('team, opponent_team, completions')
+        .select('team, opponent_team, completions, attempts')
         .eq('season', current.season)
         .eq('game_type', 'REG'),
     ]).then(([gamesRes, statsRes, gameStatsRes]) => {
@@ -217,22 +222,38 @@ export default function NFLMatchupPage() {
       } else {
         setGames(gamesRes.data)
 
+        // completions/attempts "for" sum by team, "against" (allowed/faced)
+        // sum by opponent_team -- team_game_stats.attempts is this row's
+        // team's own pass attempts, so grouping by opponent_team gives the
+        // attempt volume whoever played them (i.e. their defense) faced.
         const completionsFor = new Map()
         const completionsAgainst = new Map()
+        const attemptsFor = new Map()
+        const attemptsAgainst = new Map()
         for (const r of gameStatsRes.data) {
           completionsFor.set(r.team, (completionsFor.get(r.team) ?? 0) + (r.completions ?? 0))
           completionsAgainst.set(r.opponent_team, (completionsAgainst.get(r.opponent_team) ?? 0) + (r.completions ?? 0))
+          attemptsFor.set(r.team, (attemptsFor.get(r.team) ?? 0) + (r.attempts ?? 0))
+          attemptsAgainst.set(r.opponent_team, (attemptsAgainst.get(r.opponent_team) ?? 0) + (r.attempts ?? 0))
         }
         setStatsByTeam(
           new Map(
             statsRes.data.map((r) => {
               const gp = r.games_played
+              const attFor = attemptsFor.get(r.team) ?? 0
+              const attAgainst = attemptsAgainst.get(r.team) ?? 0
               return [
                 r.team,
                 {
                   ...r,
                   completions_avg: gp ? (completionsFor.get(r.team) ?? 0) / gp : null,
                   completions_allowed_avg: gp ? (completionsAgainst.get(r.team) ?? 0) / gp : null,
+                  // Same formula 0016 used in SQL (100 * pass_defended /
+                  // attempts faced), just computed client-side against
+                  // pass_defended/pass_defended_allowed -- both pre-existing
+                  // team_season_stats columns, untouched by the 0016 revert.
+                  pd_forced_pct: attAgainst ? (100 * r.pass_defended) / attAgainst : null,
+                  pd_suffered_pct: attFor ? (100 * r.pass_defended_allowed) / attFor : null,
                 },
               ]
             }),
