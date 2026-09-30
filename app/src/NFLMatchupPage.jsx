@@ -86,14 +86,6 @@ const DEFENSE_COLUMNS = [
     value: (team, opp) => diff(perGame(team, 'tfl'), perGame(opp, 'tfl_allowed')),
   },
   {
-    key: 'pd',
-    label: 'PD/A',
-    title:
-      "Passes Defended per 100 attempts forced (this team's defense) minus Passes Defended per 100 attempts suffered (opponent's QB)",
-    value: (team, opp) => diff(team.pd_forced_pct, opp.pd_suffered_pct),
-    isPct: true,
-  },
-  {
     key: 'int',
     label: 'INT/G',
     title: "Interceptions/G forced (this team's defense) minus Interceptions/G thrown (opponent's offense)",
@@ -203,14 +195,49 @@ export default function NFLMatchupPage() {
         .eq('game_type', 'REG')
         .eq('week', current.week),
       supabase.from('team_season_stats').select('*').eq('season', current.season),
-    ]).then(([gamesRes, statsRes]) => {
+      // completions/G isn't a column on team_season_stats -- team_game_stats
+      // already carries per-game completions (granted to anon since
+      // 0006_defense_scores_share_stats.sql), so it's derived here instead
+      // of adding a new column: sum completions per team (by team for its
+      // own, by opponent_team for what it allowed) and divide by that
+      // team's games_played from team_season_stats, which is already the
+      // correct "games actually played" denominator. Summing across every
+      // team_game_stats row (not just played ones) is safe -- an unplayed
+      // game's completions are already 0, same reasoning as 0015's comment.
+      supabase
+        .from('team_game_stats')
+        .select('team, opponent_team, completions')
+        .eq('season', current.season)
+        .eq('game_type', 'REG'),
+    ]).then(([gamesRes, statsRes, gameStatsRes]) => {
       if (cancelled) return
-      const err = gamesRes.error || statsRes.error
+      const err = gamesRes.error || statsRes.error || gameStatsRes.error
       if (err) {
         setError(err.message)
       } else {
         setGames(gamesRes.data)
-        setStatsByTeam(new Map(statsRes.data.map((r) => [r.team, r])))
+
+        const completionsFor = new Map()
+        const completionsAgainst = new Map()
+        for (const r of gameStatsRes.data) {
+          completionsFor.set(r.team, (completionsFor.get(r.team) ?? 0) + (r.completions ?? 0))
+          completionsAgainst.set(r.opponent_team, (completionsAgainst.get(r.opponent_team) ?? 0) + (r.completions ?? 0))
+        }
+        setStatsByTeam(
+          new Map(
+            statsRes.data.map((r) => {
+              const gp = r.games_played
+              return [
+                r.team,
+                {
+                  ...r,
+                  completions_avg: gp ? (completionsFor.get(r.team) ?? 0) / gp : null,
+                  completions_allowed_avg: gp ? (completionsAgainst.get(r.team) ?? 0) / gp : null,
+                },
+              ]
+            }),
+          ),
+        )
       }
       setLoading(false)
     })

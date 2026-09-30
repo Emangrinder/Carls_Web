@@ -1,11 +1,11 @@
--- Swaps the attempts_avg/attempts_allowed_avg columns 0016 added for
--- completions_avg/completions_allowed_avg instead -- the NFL Matchup
--- page wants completions-for-vs-completions-allowed, not raw attempt
--- volume. completions was already summed inside the "for"/"against" CTEs
--- (used internally for comp_pct) but never surfaced as its own per-game
--- column. pd_forced_pct/pd_suffered_pct (also added in 0016) are
--- unaffected -- they use the raw attempts/attempts_allowed sums, which
--- stay internal either way.
+-- Reverts 0016_pass_attempts_and_pd_rate.sql -- drops attempts_avg,
+-- attempts_allowed_avg, pd_forced_pct, and pd_suffered_pct, restoring
+-- team_season_stats/team_share_stats to exactly the shape they had before
+-- that migration (identical to 0015_season_avg_played_games_only.sql).
+--
+-- The NFL Matchup page ended up not needing these -- decided against
+-- adding new per-attempt columns for it, so this puts the schema back to
+-- its pre-0016 state rather than layering another column swap on top.
 
 drop materialized view if exists team_share_stats;
 drop materialized view if exists team_season_stats;
@@ -41,7 +41,6 @@ record as (
         sum(tgs.pass_td) as pass_td,
         sum(tgs.rec_td) as rec_td,
         sum(tgs.completions) as completions,
-        avg(tgs.completions) as completions_avg,
         sum(tgs.attempts) as attempts,
         avg(tgs.punts) as punts_avg,
         sum(tgs.punts) as punts_sum,
@@ -74,7 +73,6 @@ against as (
         sum(tgs.pass_td) as pass_td_allowed,
         sum(tgs.rec_td) as rec_td_allowed,
         sum(tgs.completions) as completions_allowed,
-        avg(tgs.completions) as completions_allowed_avg,
         sum(tgs.attempts) as attempts_allowed,
         avg(tgs.punts) as punts_allowed_avg,
         sum(tgs.punts) as punts_allowed_sum,
@@ -105,7 +103,6 @@ select
     f.rush_td, a.rush_td_allowed,
     f.pass_td, a.pass_td_allowed,
     f.rec_td, a.rec_td_allowed,
-    f.completions_avg, a.completions_allowed_avg,
     f.punts_avg, a.punts_allowed_avg,
     round(100.0 * f.pt_returned_sum / nullif(f.punts_sum, 0), 1) as punt_return_pct_for,
     round(100.0 * f.punt_returns_sum / nullif(a.punts_allowed_sum, 0), 1) as punt_return_pct_against,
@@ -120,8 +117,6 @@ select
     f.def_ints, a.def_ints_allowed,
     round(100.0 * f.completions / nullif(f.attempts, 0), 1) as comp_pct_for,
     round(100.0 * a.completions_allowed / nullif(a.attempts_allowed, 0), 1) as comp_pct_against,
-    round(100.0 * f.pass_defended / nullif(a.attempts_allowed, 0), 1) as pd_forced_pct,
-    round(100.0 * a.pass_defended_allowed / nullif(f.attempts, 0), 1) as pd_suffered_pct,
     f.def_td, a.def_td_allowed,
     f.st_td, a.st_td_allowed,
     f.fg_made, a.fg_made_allowed
@@ -133,7 +128,7 @@ join teams t on t.team_abbr = r.team;
 create unique index team_season_stats_pk on team_season_stats (team, season);
 grant select on team_season_stats to anon, authenticated;
 
--- Unchanged from 0016_pass_attempts_and_pd_rate.sql -- just needs
+-- Unchanged from 0015_season_avg_played_games_only.sql -- just needs
 -- recreating since it depends on team_season_stats, which had to be
 -- dropped above.
 create materialized view team_share_stats as
