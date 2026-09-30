@@ -228,6 +228,21 @@ function fmtKickoff(gameday, gametime) {
   return `${dateStr} · ${timeStr}`
 }
 
+// games.spread_line is always from the HOME team's perspective (positive =
+// home favored -- see the same convention already documented in
+// TeamRibbon.jsx's spreadGradient). Each row here is one team, home or
+// away, so it has to be flipped for the away row to read as "this team's
+// own spread" rather than always the home team's.
+function teamSpread(spreadLine, isHome) {
+  if (spreadLine == null) return null
+  return isHome ? spreadLine : -spreadLine
+}
+
+function fmtSpread(n) {
+  if (n == null) return '—'
+  return n > 0 ? `+${n}` : `${n}`
+}
+
 export default function NFLMatchupPage() {
   const [current, setCurrent] = useState(null)
   const [games, setGames] = useState([])
@@ -371,6 +386,7 @@ export default function NFLMatchupPage() {
   const sortedRows = useMemo(() => {
     const getValue = (r) => {
       if (sortKey === 'kickoff') return kickoffMs(r.game)
+      if (sortKey === 'spread') return teamSpread(r.game.spread_line, r.opp.isHome)
       if (sortKey === 'team') return r.team
       const col = ALL_COLUMNS.find((c) => c.key === sortKey)
       return col ? col.value(r.teamStats, r.oppStats) : null
@@ -431,6 +447,9 @@ export default function NFLMatchupPage() {
                 <th className={`${thBase} px-2 py-2 text-left font-medium`} onClick={() => handleSort('kickoff')}>
                   Kickoff
                 </th>
+                <th className={`${thBase} px-2 py-2 text-right font-medium`} onClick={() => handleSort('spread')}>
+                  Spread
+                </th>
                 <th colSpan={OFFENSE_COLUMNS.length} className="px-2 py-2 text-center font-medium">
                   Offense
                 </th>
@@ -444,6 +463,7 @@ export default function NFLMatchupPage() {
               <tr className="border-b border-neutral-200 text-left text-[11px] text-neutral-400 dark:border-neutral-800">
                 <th className={`${STICKY_CELL} left-0`} style={{ width: TEAM_COL_WIDTH }}></th>
                 <th className={STICKY_CELL} style={{ left: TEAM_COL_WIDTH, width: OPP_COL_WIDTH }}></th>
+                <th></th>
                 <th></th>
                 {ALL_COLUMNS.map((c, i) => (
                   <th
@@ -469,6 +489,9 @@ export default function NFLMatchupPage() {
                   <td className="whitespace-nowrap px-2 py-2 text-xs text-neutral-400">
                     {fmtKickoff(r.game.gameday, r.game.gametime)}
                   </td>
+                  <td className="px-2 py-2 text-right tabular-nums text-xs text-neutral-400">
+                    {fmtSpread(teamSpread(r.game.spread_line, r.opp.isHome))}
+                  </td>
                   {ALL_COLUMNS.map((c, i) => {
                     const v = c.value(r.teamStats, r.oppStats)
                     const color = c.vulnerability ? vulnColor(v) : diffColor(v)
@@ -486,7 +509,7 @@ export default function NFLMatchupPage() {
               ))}
               {sortedRows.length === 0 && (
                 <tr>
-                  <td colSpan={3 + ALL_COLUMNS.length} className="py-6 text-center text-sm text-neutral-400">
+                  <td colSpan={4 + ALL_COLUMNS.length} className="py-6 text-center text-sm text-neutral-400">
                     No games scheduled this week.
                   </td>
                 </tr>
