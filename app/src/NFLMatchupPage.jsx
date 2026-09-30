@@ -133,7 +133,14 @@ function diffColor(n) {
   return 'text-neutral-500'
 }
 
-function TeamAbbrCell({ abbr, opp }) {
+// Pixel widths for the two frozen leftmost columns -- Opp's sticky `left`
+// has to equal Team's actual rendered width exactly, so both are fixed
+// (not just min-width) rather than left to content-driven sizing.
+const TEAM_COL_WIDTH = 96
+const OPP_COL_WIDTH = 104
+const STICKY_CELL = 'sticky z-10 bg-neutral-50 dark:bg-neutral-900'
+
+function TeamCell({ abbr }) {
   return (
     <Link to={`/team/${abbr}`} className="flex items-center gap-2 hover:underline">
       <img
@@ -142,6 +149,13 @@ function TeamAbbrCell({ abbr, opp }) {
         className="h-6 w-6 shrink-0 object-contain"
       />
       <span className="font-medium text-neutral-900 dark:text-neutral-100">{abbr}</span>
+    </Link>
+  )
+}
+
+function OppCell({ opp }) {
+  return (
+    <Link to={`/team/${opp.abbr}`} className="flex items-center gap-1.5 hover:underline">
       <span className="text-xs text-neutral-400">{opp.isHome ? 'vs' : '@'}</span>
       <img
         src={`${import.meta.env.BASE_URL}logos/${opp.abbr}.png`}
@@ -334,8 +348,18 @@ export default function NFLMatchupPage() {
           <table className="w-full min-w-[1100px] border-collapse text-sm">
             <thead>
               <tr className="border-b border-neutral-200 text-left text-neutral-500 dark:border-neutral-800">
-                <th className={`${thBase} py-2 pr-2 font-medium`} onClick={() => handleSort('team')}>
-                  Matchup
+                <th
+                  className={`${thBase} ${STICKY_CELL} left-0 py-2 pr-2 font-medium`}
+                  style={{ width: TEAM_COL_WIDTH }}
+                  onClick={() => handleSort('team')}
+                >
+                  Team
+                </th>
+                <th
+                  className={`${STICKY_CELL} px-2 py-2 text-left font-medium`}
+                  style={{ left: TEAM_COL_WIDTH, width: OPP_COL_WIDTH }}
+                >
+                  Opp
                 </th>
                 <th className={`${thBase} px-2 py-2 text-left font-medium`} onClick={() => handleSort('kickoff')}>
                   Kickoff
@@ -351,7 +375,8 @@ export default function NFLMatchupPage() {
                 </th>
               </tr>
               <tr className="border-b border-neutral-200 text-left text-[11px] text-neutral-400 dark:border-neutral-800">
-                <th></th>
+                <th className={`${STICKY_CELL} left-0`} style={{ width: TEAM_COL_WIDTH }}></th>
+                <th className={STICKY_CELL} style={{ left: TEAM_COL_WIDTH, width: OPP_COL_WIDTH }}></th>
                 <th></th>
                 {ALL_COLUMNS.map((c) => (
                   <th
@@ -368,8 +393,11 @@ export default function NFLMatchupPage() {
             <tbody>
               {sortedRows.map((r) => (
                 <tr key={`${r.game.game_id}-${r.team}`} className="border-b border-neutral-100 dark:border-neutral-900">
-                  <td className="py-2 pr-2">
-                    <TeamAbbrCell abbr={r.team} opp={r.opp} />
+                  <td className={`${STICKY_CELL} left-0 py-2 pr-2`} style={{ width: TEAM_COL_WIDTH }}>
+                    <TeamCell abbr={r.team} />
+                  </td>
+                  <td className={`${STICKY_CELL} px-2 py-2`} style={{ left: TEAM_COL_WIDTH, width: OPP_COL_WIDTH }}>
+                    <OppCell opp={r.opp} />
                   </td>
                   <td className="whitespace-nowrap px-2 py-2 text-xs text-neutral-400">
                     {fmtKickoff(r.game.gameday, r.game.gametime)}
@@ -386,7 +414,7 @@ export default function NFLMatchupPage() {
               ))}
               {sortedRows.length === 0 && (
                 <tr>
-                  <td colSpan={2 + ALL_COLUMNS.length} className="py-6 text-center text-sm text-neutral-400">
+                  <td colSpan={3 + ALL_COLUMNS.length} className="py-6 text-center text-sm text-neutral-400">
                     No games scheduled this week.
                   </td>
                 </tr>
