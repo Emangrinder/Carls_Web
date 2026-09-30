@@ -165,33 +165,33 @@ function diffOpacity(n, maxAbs) {
 // Pixel widths for the two frozen leftmost columns -- Opp's sticky `left`
 // has to equal Team's actual rendered width exactly, so both are fixed
 // (not just min-width) rather than left to content-driven sizing.
-const TEAM_COL_WIDTH = 96
-const OPP_COL_WIDTH = 104
+const TEAM_COL_WIDTH = 48
+const OPP_COL_WIDTH = 64
 const STICKY_CELL = 'sticky z-10 bg-neutral-50 dark:bg-neutral-900'
 
 function TeamCell({ abbr }) {
   return (
-    <Link to={`/team/${abbr}`} className="flex items-center gap-2 hover:underline">
+    <Link to={`/team/${abbr}`} className="flex items-center justify-center">
       <img
         src={`${import.meta.env.BASE_URL}logos/${abbr}.png`}
         alt={abbr}
+        title={abbr}
         className="h-6 w-6 shrink-0 object-contain"
       />
-      <span className="font-medium text-neutral-900 dark:text-neutral-100">{abbr}</span>
     </Link>
   )
 }
 
 function OppCell({ opp }) {
   return (
-    <Link to={`/team/${opp.abbr}`} className="flex items-center gap-1.5 hover:underline">
+    <Link to={`/team/${opp.abbr}`} className="flex items-center gap-1.5">
       <span className="text-xs text-neutral-400">{opp.isHome ? 'vs' : '@'}</span>
       <img
         src={`${import.meta.env.BASE_URL}logos/${opp.abbr}.png`}
         alt={opp.abbr}
+        title={opp.abbr}
         className="h-6 w-6 shrink-0 object-contain"
       />
-      <span className="text-sm text-neutral-500">{opp.abbr}</span>
     </Link>
   )
 }
