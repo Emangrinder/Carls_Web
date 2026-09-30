@@ -101,7 +101,24 @@ const DEFENSE_COLUMNS = [
   },
 ]
 
-const ALL_COLUMNS = [...OFFENSE_COLUMNS, ...DEFENSE_COLUMNS]
+// Returns are neither this team's offense nor its defense -- their own
+// group rather than folded into either.
+const SPECIAL_TEAMS_COLUMNS = [
+  {
+    key: 'kr',
+    label: 'KR Yd/G',
+    title: "Kick Return Yds/G (this team) minus Kick Return Yds Allowed/G (opponent's coverage unit)",
+    value: (team, opp) => diff(team.kick_return_yards_avg, opp.kick_return_yards_allowed_avg),
+  },
+  {
+    key: 'pr',
+    label: 'PR Yd/G',
+    title: "Punt Return Yds/G (this team) minus Punt Return Yds Allowed/G (opponent's coverage unit)",
+    value: (team, opp) => diff(team.punt_return_yards_avg, opp.punt_return_yards_allowed_avg),
+  },
+]
+
+const ALL_COLUMNS = [...OFFENSE_COLUMNS, ...DEFENSE_COLUMNS, ...SPECIAL_TEAMS_COLUMNS]
 
 function fmtDiff(n, isPct) {
   if (n == null || Number.isNaN(n)) return '—'
@@ -277,6 +294,9 @@ export default function NFLMatchupPage() {
                 </th>
                 <th colSpan={DEFENSE_COLUMNS.length} className="px-2 py-2 text-center font-medium">
                   Defense
+                </th>
+                <th colSpan={SPECIAL_TEAMS_COLUMNS.length} className="px-2 py-2 text-center font-medium">
+                  Special Teams
                 </th>
               </tr>
               <tr className="border-b border-neutral-200 text-left text-[11px] text-neutral-400 dark:border-neutral-800">
