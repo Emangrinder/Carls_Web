@@ -2,10 +2,11 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from './supabaseClient'
 import { CURRENT_TEAMS } from './constants'
+import { findCurrentWeek } from './currentWeek'
 import LoadingSpinner from './LoadingSpinner'
 
 const SEASONS = [2026, 2025, 2024]
-const DEFAULT_SEASON = 2025
+const DEFAULT_SEASON = 2026
 const REG_WEEKS = Array.from({ length: 18 }, (_, i) => i + 1)
 const POSTSEASON_TABS = [
   { gameType: 'WC', label: 'WC' },
@@ -121,6 +122,25 @@ export default function MatchesPage() {
   const [teams, setTeams] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+
+  // Defaults to today's current week rather than always week 1 -- runs
+  // once on mount, across every season (not just DEFAULT_SEASON), so it
+  // still lands correctly even right after a season rolls over.
+  useEffect(() => {
+    supabase
+      .from('games')
+      .select('season, week, gameday, gametime')
+      .eq('game_type', 'REG')
+      .not('gameday', 'is', null)
+      .then(({ data, error }) => {
+        if (error || !data || data.length === 0) return
+        const current = findCurrentWeek(data)
+        if (current) {
+          setSeason(current.season)
+          setTab({ kind: 'week', week: current.week })
+        }
+      })
+  }, [])
 
   useEffect(() => {
     let cancelled = false

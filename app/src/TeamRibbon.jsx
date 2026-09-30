@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { supabase } from './supabaseClient'
+import { findCurrentWeek } from './currentWeek'
 
 function Logo({ team, className = '' }) {
   return (
@@ -19,6 +20,7 @@ function Logo({ team, className = '' }) {
 // rotating dial.
 const NAV_PAGES = [
   { path: '/matches', label: 'NFL Matches' },
+  { path: '/matchups', label: 'NFL Matchup' },
   { path: '/', label: 'NFL Teams' },
   { path: '/scores', label: 'Fantasy Scores' },
   { path: '/rules', label: 'Fantasy Rules' },
@@ -205,22 +207,11 @@ export default function TeamRibbon() {
       .not('gameday', 'is', null)
       .then(({ data, error }) => {
         if (error || !data || data.length === 0) return
-        const kickoffMs = (g) => new Date(`${g.gameday}T${g.gametime || '13:00'}:00`).getTime()
-        const now = Date.now()
-        // "Current week" = whichever (season, week) has the game closest to
-        // right now -- works whether that week is upcoming or just finished.
-        let closest = data[0]
-        let closestDiff = Infinity
-        for (const g of data) {
-          const diff = Math.abs(kickoffMs(g) - now)
-          if (diff < closestDiff) {
-            closestDiff = diff
-            closest = g
-          }
-        }
+        const current = findCurrentWeek(data)
+        const kickoff = (g) => new Date(`${g.gameday}T${g.gametime || '13:00'}:00`).getTime()
         const weekGames = data
-          .filter((g) => g.season === closest.season && g.week === closest.week)
-          .sort((a, b) => kickoffMs(a) - kickoffMs(b))
+          .filter((g) => g.season === current.season && g.week === current.week)
+          .sort((a, b) => kickoff(a) - kickoff(b))
         setGames(weekGames)
       })
   }, [])

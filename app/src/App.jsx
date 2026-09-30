@@ -3,6 +3,7 @@ import TeamRibbon from './TeamRibbon'
 import TeamStatsTable from './TeamStatsTable'
 import TeamPage from './TeamPage'
 import MatchesPage from './MatchesPage'
+import NFLMatchupPage from './NFLMatchupPage'
 import GamePage from './GamePage'
 import DivisionNav from './DivisionNav'
 import Footer from './Footer'
@@ -23,6 +24,7 @@ function App() {
               <Route path="/" element={<TeamStatsTable />} />
               <Route path="/matches" element={<MatchesPage />} />
               <Route path="/matches/:gameId" element={<GamePage />} />
+              <Route path="/matchups" element={<NFLMatchupPage />} />
               <Route path="/team/:teamAbbr" element={<TeamPage />} />
               <Route path="/player/:playerId" element={<PlayerPage />} />
               <Route path="/coach/:teamAbbr" element={<CoachPage />} />
