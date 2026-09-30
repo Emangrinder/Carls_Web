@@ -36,10 +36,10 @@ const OFFENSE_COLUMNS = [
     value: (team, opp) => diff(team.rush_yds_avg, opp.rush_yds_allowed_avg),
   },
   {
-    key: 'att',
-    label: 'ATT/G',
-    title: 'Pass Attempts/G (this team) minus Pass Attempts Allowed/G (opponent)',
-    value: (team, opp) => diff(team.attempts_avg, opp.attempts_allowed_avg),
+    key: 'cmp_g',
+    label: 'CMP/G',
+    title: 'Completions/G (this team) minus Completions Allowed/G (opponent)',
+    value: (team, opp) => diff(team.completions_avg, opp.completions_allowed_avg),
   },
   {
     key: 'cmp',
@@ -223,15 +223,18 @@ export default function NFLMatchupPage() {
   // One row per team (32 for a full week) -- both the offense-vs-their-D
   // and defense-vs-their-O column groups live on that same row, keyed off
   // this team's own team_season_stats row vs. this week's opponent's.
+  // Every scheduled game always gets both its rows, even when a team has
+  // no team_season_stats row yet (e.g. week 1, before anyone has a
+  // completed game for team_season_stats to aggregate) -- falling back to
+  // {} rather than skipping the row means diff()/perGame() just render
+  // "--" for that team instead of the whole matchup silently vanishing.
   const rows = useMemo(() => {
     const out = []
     for (const g of games) {
-      const home = statsByTeam.get(g.home_team)
-      const away = statsByTeam.get(g.away_team)
-      if (home && away) {
-        out.push({ game: g, team: g.home_team, opp: { abbr: g.away_team, isHome: true }, teamStats: home, oppStats: away })
-        out.push({ game: g, team: g.away_team, opp: { abbr: g.home_team, isHome: false }, teamStats: away, oppStats: home })
-      }
+      const home = statsByTeam.get(g.home_team) ?? {}
+      const away = statsByTeam.get(g.away_team) ?? {}
+      out.push({ game: g, team: g.home_team, opp: { abbr: g.away_team, isHome: true }, teamStats: home, oppStats: away })
+      out.push({ game: g, team: g.away_team, opp: { abbr: g.home_team, isHome: false }, teamStats: away, oppStats: home })
     }
     return out
   }, [games, statsByTeam])
