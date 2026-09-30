@@ -100,6 +100,18 @@ const DEFENSE_COLUMNS = [
     value: (team, opp) => diff(opp.pd_suffered_pct, team.pd_forced_pct),
     isPct: true,
   },
+  {
+    key: 'btkv',
+    label: 'BTK',
+    title:
+      "Broken-tackle vulnerability: the opponent's Broken Tackles/G × this team's own missed-tackle rate (missed tackles as a % of tackle attempts). Not a for-minus-against differential -- always >= 0, and more is bad (more exposed to broken tackles).",
+    value: (team, opp) => {
+      if (opp.broken_tackles_avg == null || team.missed_tackles_avg == null || !team.tackles_avg) return null
+      return opp.broken_tackles_avg * (team.missed_tackles_avg / team.tackles_avg)
+    },
+    vulnerability: true,
+    unsigned: true,
+  },
 ]
 
 // Returns are neither this team's offense nor its defense -- their own
@@ -132,9 +144,9 @@ function groupStartBorder(index) {
   return index === DEFENSE_START || index === SPECIAL_TEAMS_START ? GROUP_DIVIDER : ''
 }
 
-function fmtDiff(n, isPct) {
+function fmtDiff(n, isPct, unsigned) {
   if (n == null || Number.isNaN(n)) return '—'
-  const sign = n > 0 ? '+' : ''
+  const sign = !unsigned && n > 0 ? '+' : ''
   return `${sign}${n.toFixed(1)}${isPct ? '%' : ''}`
 }
 
@@ -143,6 +155,16 @@ function diffColor(n) {
   if (n > 0) return 'text-green-600 dark:text-green-400'
   if (n < 0) return 'text-red-600 dark:text-red-400'
   return 'text-neutral-500'
+}
+
+// A "vulnerability index" isn't a for-minus-against differential -- it's
+// always >= 0 (a product of non-negative rates), and there's no favorable
+// direction to show in green: more always means more exposed. Single red
+// hue, still opacity-scaled by diffOpacity like every other column, just
+// never green.
+function vulnColor(n) {
+  if (n == null || Number.isNaN(n)) return 'text-neutral-400 dark:text-neutral-600'
+  return 'text-red-600 dark:text-red-400'
 }
 
 // Intensity scales with |value| relative to the largest |value| in that
@@ -449,13 +471,14 @@ export default function NFLMatchupPage() {
                   </td>
                   {ALL_COLUMNS.map((c, i) => {
                     const v = c.value(r.teamStats, r.oppStats)
+                    const color = c.vulnerability ? vulnColor(v) : diffColor(v)
                     return (
                       <td
                         key={c.key}
-                        className={`${groupStartBorder(i)} px-2 py-2 text-right tabular-nums ${diffColor(v)}`}
+                        className={`${groupStartBorder(i)} px-2 py-2 text-right tabular-nums ${color}`}
                         style={{ opacity: diffOpacity(v, columnScale.get(c.key)) }}
                       >
-                        {fmtDiff(v, c.isPct)}
+                        {fmtDiff(v, c.isPct, c.unsigned)}
                       </td>
                     )
                   })}

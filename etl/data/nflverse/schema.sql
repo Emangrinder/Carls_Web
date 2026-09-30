@@ -130,6 +130,7 @@ CREATE TABLE player_offense_stats (
     receiving_20                 INTEGER,       -- receptions of 20+ yards
     receiving_40                 INTEGER,       -- receptions of 40+ yards
     rushing_yards_after_contact  REAL,          -- PFR advanced, 2018+
+    broken_tackles                INTEGER,      -- PFR advanced, 2018+ -- rushing_broken_tackles + receiving_broken_tackles combined
     penalties                    INTEGER,
     penalty_yards                INTEGER,
     PRIMARY KEY (player_id, game_id)
@@ -143,6 +144,13 @@ CREATE TABLE player_defense_stats (
     def_tackles_solo             INTEGER,
     def_tackles_with_assist       INTEGER,
     def_tackle_assists             INTEGER,
+    -- PFR advanced, 2018+ -- its own tackle/missed-tackle count, kept
+    -- separate from def_tackles_solo/with_assist above (nflverse's own
+    -- play-by-play-derived counts) since the two sources use different
+    -- counting methodologies; def_missed_tackles is only meaningful
+    -- alongside def_tackles_combined from the same source.
+    def_missed_tackles              INTEGER,
+    def_tackles_combined             INTEGER,
     def_tackles_for_loss            INTEGER,
     def_tackles_for_loss_yards       REAL,
     def_fumbles_forced                INTEGER,

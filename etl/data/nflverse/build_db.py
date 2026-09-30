@@ -328,14 +328,19 @@ def main():
         print(f"  {len(missing)} players not found in players.csv, inserted as stubs")
 
     # ------------------------------------------------------------------
-    # 4a. PFR advanced rushing (yards after contact) -> lookup by (gsis_id, game_id)
+    # 4a. PFR advanced rushing (yards after contact, broken tackles) ->
+    # lookup by (gsis_id, game_id). rushing_broken_tackles and
+    # receiving_broken_tackles are both present in this same file (PFR
+    # duplicates them into advstats_week_rec too, but there's no need to
+    # download that file just to read columns already sitting here).
     # ------------------------------------------------------------------
-    print("Loading PFR advanced rushing (yards after contact)...")
+    print("Loading PFR advanced rushing (yards after contact, broken tackles)...")
     advrush_csv = download_optional(
         f"{RELEASE_BASE}/pfr_advstats/advstats_week_rush_{season}.csv.gz",
         season_dir / f"advstats_week_rush_{season}.csv.gz",
     )
     rush_yac_by_key = {}
+    broken_tackles_by_key = {}
     n_yac_matched = n_yac_unmatched = 0
     for row in read_csv_rows(advrush_csv):
         if row["season"] != str(season) or row["game_type"] != "REG":
@@ -347,9 +352,44 @@ def main():
         if gsis_id is None:
             n_yac_unmatched += 1
             continue
-        rush_yac_by_key[(gsis_id, row["game_id"])] = to_float(row["rushing_yards_after_contact"])
+        key = (gsis_id, row["game_id"])
+        rush_yac_by_key[key] = to_float(row["rushing_yards_after_contact"])
+        broken_tackles_by_key[key] = (to_int(row["rushing_broken_tackles"]) or 0) + (
+            to_int(row["receiving_broken_tackles"]) or 0
+        )
         n_yac_matched += 1
     print(f"  {n_yac_matched} rushing-YAC rows matched, {n_yac_unmatched} unmatched pfr_id")
+
+    # ------------------------------------------------------------------
+    # 4a-2. PFR advanced defense (missed tackles) -> lookup by (gsis_id, game_id).
+    # def_tackles_combined is pulled from this same file rather than
+    # derived from def_tackles_solo/with_assist above, so the missed-tackle
+    # rate (def_missed_tackles / def_tackles_combined) stays internally
+    # consistent -- both numbers come from PFR's own counting method.
+    # ------------------------------------------------------------------
+    print("Loading PFR advanced defense (missed tackles)...")
+    advdef_csv = download_optional(
+        f"{RELEASE_BASE}/pfr_advstats/advstats_week_def_{season}.csv.gz",
+        season_dir / f"advstats_week_def_{season}.csv.gz",
+    )
+    missed_tackles_by_key = {}
+    tackles_combined_by_key = {}
+    n_def_matched = n_def_unmatched = 0
+    for row in read_csv_rows(advdef_csv):
+        if row["season"] != str(season) or row["game_type"] != "REG":
+            continue
+        week = to_int(row["week"])
+        if week is None or not (MIN_WEEK <= week <= MAX_WEEK):
+            continue
+        gsis_id = pfr_id_to_gsis.get(row["pfr_player_id"])
+        if gsis_id is None:
+            n_def_unmatched += 1
+            continue
+        key = (gsis_id, row["game_id"])
+        missed_tackles_by_key[key] = to_int(row["def_missed_tackles"])
+        tackles_combined_by_key[key] = to_int(row["def_tackles_combined"])
+        n_def_matched += 1
+    print(f"  {n_def_matched} advanced-defense rows matched, {n_def_unmatched} unmatched pfr_id")
 
     # ------------------------------------------------------------------
     # 4b. now insert the actual stat rows (players table is populated)
@@ -398,6 +438,7 @@ def main():
                 "rushing_20": to_int(row["rushing_20"]), "rushing_40": to_int(row["rushing_40"]),
                 "receiving_20": to_int(row["receiving_20"]), "receiving_40": to_int(row["receiving_40"]),
                 "rushing_yards_after_contact": rush_yac_by_key.get((pid, row["game_id"])),
+                "broken_tackles": broken_tackles_by_key.get((pid, row["game_id"])),
                 "penalties": to_int(row["penalties"]), "penalty_yards": to_int(row["penalty_yards"]),
             })
 
@@ -409,6 +450,8 @@ def main():
                 "def_tackles_solo": to_int(row["def_tackles_solo"]),
                 "def_tackles_with_assist": to_int(row["def_tackles_with_assist"]),
                 "def_tackle_assists": to_int(row["def_tackle_assists"]),
+                "def_missed_tackles": missed_tackles_by_key.get((pid, row["game_id"])),
+                "def_tackles_combined": tackles_combined_by_key.get((pid, row["game_id"])),
                 "def_tackles_for_loss": to_int(row["def_tackles_for_loss"]),
                 "def_tackles_for_loss_yards": to_float(row["def_tackles_for_loss_yards"]),
                 "def_fumbles_forced": to_int(row["def_fumbles_forced"]),

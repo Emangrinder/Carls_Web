@@ -86,7 +86,7 @@ TABLE_SPECS = [
         "receiving_2pt_conversions", "racr", "target_share", "air_yards_share", "wopr",
         "fantasy_points", "fantasy_points_ppr", "passing_20", "passing_40", "rushing_20",
         "rushing_40", "receiving_20", "receiving_40", "rushing_yards_after_contact",
-        "penalties", "penalty_yards",
+        "broken_tackles", "penalties", "penalty_yards",
     ], season_sources("player_offense_stats"), None),
 
     ("player_defense_stats", [
@@ -96,7 +96,8 @@ TABLE_SPECS = [
         "def_qb_hits", "def_interceptions", "def_interception_yards", "def_pass_defended",
         "def_tds", "def_fumbles", "def_safeties", "fumble_recovery_own",
         "fumble_recovery_yards_own", "fumble_recovery_opp", "fumble_recovery_yards_opp",
-        "fumble_recovery_tds", "penalties", "penalty_yards",
+        "fumble_recovery_tds", "def_missed_tackles", "def_tackles_combined",
+        "penalties", "penalty_yards",
     ], season_sources("player_defense_stats"), None),
 
     ("player_special_teams_stats", [
