@@ -145,6 +145,23 @@ function diffColor(n) {
   return 'text-neutral-500'
 }
 
+// Intensity scales with |value| relative to the largest |value| in that
+// same column this week, not some fixed constant -- a column whose week is
+// mostly tight games looks mostly faded, one with a blowout differential
+// still shows that outlier at full strength, and every column reads on its
+// own scale (PYd/G's typical swing is nothing like CMP%'s). Opacity, not a
+// second color, so the existing green/red/dark-mode classes from
+// diffColor keep doing the hue -- this just fades toward the page
+// background instead of toward a hardcoded gray that wouldn't match both
+// themes.
+const MIN_OPACITY = 0.35
+
+function diffOpacity(n, maxAbs) {
+  if (n == null || Number.isNaN(n) || !maxAbs) return 1
+  const intensity = Math.min(Math.abs(n) / maxAbs, 1)
+  return MIN_OPACITY + (1 - MIN_OPACITY) * intensity
+}
+
 // Pixel widths for the two frozen leftmost columns -- Opp's sticky `left`
 // has to equal Team's actual rendered width exactly, so both are fixed
 // (not just min-width) rather than left to content-driven sizing.
@@ -313,6 +330,22 @@ export default function NFLMatchupPage() {
     return out
   }, [games, statsByTeam])
 
+  // Largest |value| per column across this week's 32 rows -- the
+  // denominator diffOpacity scales against, recomputed only when the
+  // underlying rows change (not on every sort/re-render).
+  const columnScale = useMemo(() => {
+    const scale = new Map()
+    for (const c of ALL_COLUMNS) {
+      let maxAbs = 0
+      for (const r of rows) {
+        const v = c.value(r.teamStats, r.oppStats)
+        if (v != null && !Number.isNaN(v)) maxAbs = Math.max(maxAbs, Math.abs(v))
+      }
+      scale.set(c.key, maxAbs)
+    }
+    return scale
+  }, [rows])
+
   const sortedRows = useMemo(() => {
     const getValue = (r) => {
       if (sortKey === 'kickoff') return kickoffMs(r.game)
@@ -417,7 +450,11 @@ export default function NFLMatchupPage() {
                   {ALL_COLUMNS.map((c, i) => {
                     const v = c.value(r.teamStats, r.oppStats)
                     return (
-                      <td key={c.key} className={`${groupStartBorder(i)} px-2 py-2 text-right tabular-nums ${diffColor(v)}`}>
+                      <td
+                        key={c.key}
+                        className={`${groupStartBorder(i)} px-2 py-2 text-right tabular-nums ${diffColor(v)}`}
+                        style={{ opacity: diffOpacity(v, columnScale.get(c.key)) }}
+                      >
                         {fmtDiff(v, c.isPct)}
                       </td>
                     )
