@@ -409,16 +409,20 @@ function fmtSpread(n) {
 // (games.home_score is not null), so the upcoming/current week -- which
 // has no score yet -- is excluded automatically, no separate "exclude
 // this week" filter needed.
-function fmtSoS(sos) {
-  if (!sos) return '—'
-  const { wins, losses, ties } = sos
-  return `${wins.toFixed(1)}-${losses.toFixed(1)}${ties >= 0.05 ? `-${ties.toFixed(1)}` : ''}`
-}
-
 function sosValue(sos) {
   if (!sos) return null
   const total = sos.wins + sos.losses + sos.ties
   return total ? (sos.wins + 0.5 * sos.ties) / total : null
+}
+
+// A fraction of average win rate, not an averaged record -- opponents who
+// are collectively 2-1 (a .667 win rate each) read as ".67", batting-
+// average style, matching how winPct already reads everywhere else in
+// this app rather than introducing a new W-L display format just here.
+function fmtSoS(sos) {
+  const v = sosValue(sos)
+  if (v == null) return '—'
+  return v.toFixed(2).replace(/^0\./, '.')
 }
 
 export default function NFLMatchupPage() {
