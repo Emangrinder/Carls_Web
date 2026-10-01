@@ -379,7 +379,7 @@ function GroupSortIndicator({ active, mode }) {
 
 function fmtKickoff(gameday, gametime) {
   if (!gameday) return 'TBD'
-  const dateStr = new Date(`${gameday}T00:00:00`).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
+  const dateStr = new Date(`${gameday}T00:00:00`).toLocaleDateString(undefined, { weekday: 'short' })
   if (!gametime) return dateStr
   const [h, m] = gametime.split(':').map(Number)
   if (Number.isNaN(h)) return dateStr
@@ -400,6 +400,25 @@ function teamSpread(spreadLine, isHome) {
 function fmtSpread(n) {
   if (n == null) return '—'
   return n > 0 ? `+${n}` : `${n}`
+}
+
+// Strength of schedule: the average (wins, losses, ties) across every
+// opponent this team has actually played so far this season -- each
+// opponent's CURRENT record (as of now, not as of when they played them),
+// which is the standard SoS convention. Built from completed games only
+// (games.home_score is not null), so the upcoming/current week -- which
+// has no score yet -- is excluded automatically, no separate "exclude
+// this week" filter needed.
+function fmtSoS(sos) {
+  if (!sos) return '—'
+  const { wins, losses, ties } = sos
+  return `${wins.toFixed(1)}-${losses.toFixed(1)}${ties >= 0.05 ? `-${ties.toFixed(1)}` : ''}`
+}
+
+function sosValue(sos) {
+  if (!sos) return null
+  const total = sos.wins + sos.losses + sos.ties
+  return total ? (sos.wins + 0.5 * sos.ties) / total : null
 }
 
 export default function NFLMatchupPage() {
@@ -458,13 +477,43 @@ export default function NFLMatchupPage() {
         .select('team, opponent_team, completions, attempts')
         .eq('season', current.season)
         .eq('game_type', 'REG'),
-    ]).then(([gamesRes, statsRes, gameStatsRes]) => {
+      // SoS: every completed REG game this season, to build each team's
+      // list of opponents actually played -- not scoped to this week.
+      supabase
+        .from('games')
+        .select('home_team, away_team')
+        .eq('season', current.season)
+        .eq('game_type', 'REG')
+        .not('home_score', 'is', null),
+    ]).then(([gamesRes, statsRes, gameStatsRes, seasonGamesRes]) => {
       if (cancelled) return
-      const err = gamesRes.error || statsRes.error || gameStatsRes.error
+      const err = gamesRes.error || statsRes.error || gameStatsRes.error || seasonGamesRes.error
       if (err) {
         setError(err.message)
       } else {
         setGames(gamesRes.data)
+
+        const recordByTeam = new Map(statsRes.data.map((r) => [r.team, { wins: r.wins, losses: r.losses, ties: r.ties }]))
+        const opponentsByTeam = new Map()
+        for (const g of seasonGamesRes.data) {
+          if (!opponentsByTeam.has(g.home_team)) opponentsByTeam.set(g.home_team, [])
+          if (!opponentsByTeam.has(g.away_team)) opponentsByTeam.set(g.away_team, [])
+          opponentsByTeam.get(g.home_team).push(g.away_team)
+          opponentsByTeam.get(g.away_team).push(g.home_team)
+        }
+        const sosByTeam = new Map()
+        for (const [team, opponents] of opponentsByTeam) {
+          let wins = 0, losses = 0, ties = 0, n = 0
+          for (const oppAbbr of opponents) {
+            const rec = recordByTeam.get(oppAbbr)
+            if (!rec) continue
+            wins += rec.wins ?? 0
+            losses += rec.losses ?? 0
+            ties += rec.ties ?? 0
+            n++
+          }
+          sosByTeam.set(team, n ? { wins: wins / n, losses: losses / n, ties: ties / n } : null)
+        }
 
         // completions/attempts "for" sum by team, "against" (allowed/faced)
         // sum by opponent_team -- team_game_stats.attempts is this row's
@@ -498,6 +547,7 @@ export default function NFLMatchupPage() {
                   // team_season_stats columns, untouched by the 0016 revert.
                   pd_forced_pct: attAgainst ? (100 * r.pass_defended) / attAgainst : null,
                   pd_suffered_pct: attFor ? (100 * r.pass_defended_allowed) / attFor : null,
+                  sos: sosByTeam.get(r.team) ?? null,
                 },
               ]
             }),
@@ -577,6 +627,7 @@ export default function NFLMatchupPage() {
     const getValue = (r) => {
       if (sortKey === 'kickoff') return kickoffMs(r.game)
       if (sortKey === 'spread') return teamSpread(r.game.spread_line, r.opp.isHome)
+      if (sortKey === 'sos') return sosValue(r.teamStats.sos)
       if (sortKey === 'team') return r.team
       // visibleColumns, not ALL_COLUMNS -- sortKey can only ever be a key
       // that was actually clickable, which depends on summary vs. isolated.
@@ -684,6 +735,13 @@ export default function NFLMatchupPage() {
                 <th className={`${thBase} px-2 py-2 text-right font-medium`} onClick={() => handleSort('spread')}>
                   Spread
                 </th>
+                <th
+                  className={`${thBase} px-2 py-2 text-right font-medium`}
+                  onClick={() => handleSort('sos')}
+                  title="Strength of schedule: average (wins-losses) of every opponent this team has played so far this season, using each opponent's current record"
+                >
+                  SoS
+                </th>
                 {(!activeGroup || activeGroup === 'offense') && (
                   <th
                     colSpan={headerColSpan('offense')}
@@ -721,6 +779,7 @@ export default function NFLMatchupPage() {
                 <th className={STICKY_CELL} style={{ left: TEAM_COL_WIDTH, width: OPP_COL_WIDTH }}></th>
                 <th></th>
                 <th></th>
+                <th></th>
                 {visibleColumns.map((c) => (
                   <th
                     key={c.key}
@@ -751,6 +810,9 @@ export default function NFLMatchupPage() {
                   <td className="px-2 py-2 text-right tabular-nums text-xs text-neutral-400">
                     {fmtSpread(teamSpread(r.game.spread_line, r.opp.isHome))}
                   </td>
+                  <td className="whitespace-nowrap px-2 py-2 text-right tabular-nums text-xs text-neutral-400">
+                    {fmtSoS(r.teamStats.sos)}
+                  </td>
                   {visibleColumns.map((c) => {
                     const v = c.value(r.teamStats, r.oppStats)
                     const colorValue = c.invert && v != null ? -v : v
@@ -769,7 +831,7 @@ export default function NFLMatchupPage() {
               ))}
               {sortedRows.length === 0 && (
                 <tr>
-                  <td colSpan={5 + visibleColumns.length} className="py-6 text-center text-sm text-neutral-400">
+                  <td colSpan={6 + visibleColumns.length} className="py-6 text-center text-sm text-neutral-400">
                     No games scheduled this week.
                   </td>
                 </tr>
