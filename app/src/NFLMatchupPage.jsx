@@ -132,6 +132,27 @@ const SPECIAL_TEAMS_COLUMNS = [
     title: "Punt Return Yds Allowed/G (opponent's coverage unit) minus Punt Return Yds/G (this team)",
     value: (team, opp) => diff(opp.punt_return_yards_allowed_avg, team.punt_return_yards_avg),
   },
+  {
+    key: 'punts',
+    label: 'Punts/G',
+    title:
+      "Punts Allowed/G (opponent's defense, i.e. how often teams facing them punt) minus Punts/G (this team's own offense) -- positive is BAD here (this team punting more than usual means their offense is stalling more than normal)",
+    value: (team, opp) => diff(opp.punts_allowed_avg, team.punts_avg),
+    invert: true,
+  },
+  {
+    key: 'prpct',
+    label: 'PR%',
+    // punt_return_pct_for/_against are named backwards from every other
+    // _for/_against pair in this schema (see the comment on TeamPage.jsx's
+    // STAT_ROWS) -- _for is really "how often THIS team's own punts get
+    // returned against them" (a coverage-vulnerability read on opp here),
+    // and _against is really "this team's own punt-return success rate".
+    title:
+      "Opponent's punt coverage vulnerability (how often opponent's own punts get returned against them) minus this team's own punt-return rate",
+    value: (team, opp) => diff(opp.punt_return_pct_for, team.punt_return_pct_against),
+    isPct: true,
+  },
 ]
 
 const ALL_COLUMNS = [...OFFENSE_COLUMNS, ...DEFENSE_COLUMNS, ...SPECIAL_TEAMS_COLUMNS]
@@ -187,10 +208,14 @@ function diffOpacity(n, maxAbs) {
   return MIN_OPACITY + (1 - MIN_OPACITY) * intensity
 }
 
-// Pixel widths for the three frozen leftmost columns -- each one's sticky
-// `left` has to equal the cumulative width of the columns before it
-// exactly, so all three are fixed (not just min-width) rather than left to
-// content-driven sizing.
+// Team and Opp are the two frozen columns -- each one's sticky `left` has
+// to equal the cumulative width of the frozen columns before it exactly,
+// so both are fixed (not just min-width) rather than left to content-
+// driven sizing. VS sits between them at rest but isn't sticky itself --
+// scrolling right slides it out of view behind Team while Opp snaps left
+// to sit flush against Team (sticky left: TEAM_COL_WIDTH, not
+// TEAM_COL_WIDTH + VS_COL_WIDTH), so it collapses away instead of leaving
+// a permanent gap in the frozen block.
 const TEAM_COL_WIDTH = 48
 const VS_COL_WIDTH = 28
 const OPP_COL_WIDTH = 48
@@ -446,10 +471,10 @@ export default function NFLMatchupPage() {
                 >
                   Team
                 </th>
-                <th className={STICKY_CELL} style={{ left: TEAM_COL_WIDTH, width: VS_COL_WIDTH }}></th>
+                <th style={{ width: VS_COL_WIDTH }}></th>
                 <th
                   className={`${STICKY_CELL} px-2 py-2 text-left font-medium`}
-                  style={{ left: TEAM_COL_WIDTH + VS_COL_WIDTH, width: OPP_COL_WIDTH }}
+                  style={{ left: TEAM_COL_WIDTH, width: OPP_COL_WIDTH }}
                 >
                   Opp
                 </th>
@@ -471,8 +496,8 @@ export default function NFLMatchupPage() {
               </tr>
               <tr className="border-b border-neutral-200 text-left text-[11px] text-neutral-400 dark:border-neutral-800">
                 <th className={`${STICKY_CELL} left-0`} style={{ width: TEAM_COL_WIDTH }}></th>
-                <th className={STICKY_CELL} style={{ left: TEAM_COL_WIDTH, width: VS_COL_WIDTH }}></th>
-                <th className={STICKY_CELL} style={{ left: TEAM_COL_WIDTH + VS_COL_WIDTH, width: OPP_COL_WIDTH }}></th>
+                <th style={{ width: VS_COL_WIDTH }}></th>
+                <th className={STICKY_CELL} style={{ left: TEAM_COL_WIDTH, width: OPP_COL_WIDTH }}></th>
                 <th></th>
                 <th></th>
                 {ALL_COLUMNS.map((c, i) => (
@@ -493,13 +518,10 @@ export default function NFLMatchupPage() {
                   <td className={`${STICKY_CELL} left-0 py-2 pr-2`} style={{ width: TEAM_COL_WIDTH }}>
                     <TeamCell abbr={r.team} />
                   </td>
-                  <td className={`${STICKY_CELL} px-2 py-2 text-center`} style={{ left: TEAM_COL_WIDTH, width: VS_COL_WIDTH }}>
+                  <td className="px-2 py-2 text-center" style={{ width: VS_COL_WIDTH }}>
                     <VsCell opp={r.opp} />
                   </td>
-                  <td
-                    className={`${STICKY_CELL} px-2 py-2`}
-                    style={{ left: TEAM_COL_WIDTH + VS_COL_WIDTH, width: OPP_COL_WIDTH }}
-                  >
+                  <td className={`${STICKY_CELL} px-2 py-2`} style={{ left: TEAM_COL_WIDTH, width: OPP_COL_WIDTH }}>
                     <OppCell opp={r.opp} />
                   </td>
                   <td className="whitespace-nowrap px-2 py-2 text-xs text-neutral-400">
