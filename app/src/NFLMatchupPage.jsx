@@ -52,18 +52,21 @@ const OFFENSE_COLUMNS = [
   {
     key: 'ska',
     label: 'SKA/G',
-    title: "Sacks/G (opponent's pass rush) minus Sacks Allowed/G (this team's O-line)",
+    title: "Sacks/G (opponent's pass rush) minus Sacks Allowed/G (this team's O-line) -- positive is BAD here (more sacks taken than usual)",
     value: (team, opp) => diff(perGame(opp, 'sacks'), perGame(team, 'sacks_allowed')),
+    invert: true,
   },
   {
     key: 'to',
     label: 'TO/G',
-    title: "Takeaways/G (opponent's defense) minus Giveaways/G (this team's offense)",
+    title:
+      "Takeaways/G (opponent's defense) minus Giveaways/G (this team's offense) -- positive is BAD here (more giveaways than usual)",
     value: (team, opp) =>
       diff(
         (perGame(opp, 'takeaways_int') ?? 0) + (perGame(opp, 'takeaways_fumble') ?? 0),
         (perGame(team, 'turnovers_int') ?? 0) + (perGame(team, 'turnovers_fumble') ?? 0),
       ),
+    invert: true,
   },
 ]
 
@@ -184,11 +187,13 @@ function diffOpacity(n, maxAbs) {
   return MIN_OPACITY + (1 - MIN_OPACITY) * intensity
 }
 
-// Pixel widths for the two frozen leftmost columns -- Opp's sticky `left`
-// has to equal Team's actual rendered width exactly, so both are fixed
-// (not just min-width) rather than left to content-driven sizing.
+// Pixel widths for the three frozen leftmost columns -- each one's sticky
+// `left` has to equal the cumulative width of the columns before it
+// exactly, so all three are fixed (not just min-width) rather than left to
+// content-driven sizing.
 const TEAM_COL_WIDTH = 48
-const OPP_COL_WIDTH = 64
+const VS_COL_WIDTH = 28
+const OPP_COL_WIDTH = 48
 const STICKY_CELL = 'sticky z-10 bg-neutral-50 dark:bg-neutral-900'
 
 function TeamCell({ abbr }) {
@@ -204,10 +209,13 @@ function TeamCell({ abbr }) {
   )
 }
 
+function VsCell({ opp }) {
+  return <span className="text-xs text-neutral-400">{opp.isHome ? 'vs' : '@'}</span>
+}
+
 function OppCell({ opp }) {
   return (
-    <Link to={`/team/${opp.abbr}`} className="flex items-center gap-1.5">
-      <span className="text-xs text-neutral-400">{opp.isHome ? 'vs' : '@'}</span>
+    <Link to={`/team/${opp.abbr}`} className="flex items-center justify-center">
       <img
         src={`${import.meta.env.BASE_URL}logos/${opp.abbr}.png`}
         alt={opp.abbr}
@@ -438,9 +446,10 @@ export default function NFLMatchupPage() {
                 >
                   Team
                 </th>
+                <th className={STICKY_CELL} style={{ left: TEAM_COL_WIDTH, width: VS_COL_WIDTH }}></th>
                 <th
                   className={`${STICKY_CELL} px-2 py-2 text-left font-medium`}
-                  style={{ left: TEAM_COL_WIDTH, width: OPP_COL_WIDTH }}
+                  style={{ left: TEAM_COL_WIDTH + VS_COL_WIDTH, width: OPP_COL_WIDTH }}
                 >
                   Opp
                 </th>
@@ -462,7 +471,8 @@ export default function NFLMatchupPage() {
               </tr>
               <tr className="border-b border-neutral-200 text-left text-[11px] text-neutral-400 dark:border-neutral-800">
                 <th className={`${STICKY_CELL} left-0`} style={{ width: TEAM_COL_WIDTH }}></th>
-                <th className={STICKY_CELL} style={{ left: TEAM_COL_WIDTH, width: OPP_COL_WIDTH }}></th>
+                <th className={STICKY_CELL} style={{ left: TEAM_COL_WIDTH, width: VS_COL_WIDTH }}></th>
+                <th className={STICKY_CELL} style={{ left: TEAM_COL_WIDTH + VS_COL_WIDTH, width: OPP_COL_WIDTH }}></th>
                 <th></th>
                 <th></th>
                 {ALL_COLUMNS.map((c, i) => (
@@ -483,7 +493,13 @@ export default function NFLMatchupPage() {
                   <td className={`${STICKY_CELL} left-0 py-2 pr-2`} style={{ width: TEAM_COL_WIDTH }}>
                     <TeamCell abbr={r.team} />
                   </td>
-                  <td className={`${STICKY_CELL} px-2 py-2`} style={{ left: TEAM_COL_WIDTH, width: OPP_COL_WIDTH }}>
+                  <td className={`${STICKY_CELL} px-2 py-2 text-center`} style={{ left: TEAM_COL_WIDTH, width: VS_COL_WIDTH }}>
+                    <VsCell opp={r.opp} />
+                  </td>
+                  <td
+                    className={`${STICKY_CELL} px-2 py-2`}
+                    style={{ left: TEAM_COL_WIDTH + VS_COL_WIDTH, width: OPP_COL_WIDTH }}
+                  >
                     <OppCell opp={r.opp} />
                   </td>
                   <td className="whitespace-nowrap px-2 py-2 text-xs text-neutral-400">
@@ -494,7 +510,8 @@ export default function NFLMatchupPage() {
                   </td>
                   {ALL_COLUMNS.map((c, i) => {
                     const v = c.value(r.teamStats, r.oppStats)
-                    const color = c.vulnerability ? vulnColor(v) : diffColor(v)
+                    const colorValue = c.invert && v != null ? -v : v
+                    const color = c.vulnerability ? vulnColor(v) : diffColor(colorValue)
                     return (
                       <td
                         key={c.key}
@@ -509,7 +526,7 @@ export default function NFLMatchupPage() {
               ))}
               {sortedRows.length === 0 && (
                 <tr>
-                  <td colSpan={4 + ALL_COLUMNS.length} className="py-6 text-center text-sm text-neutral-400">
+                  <td colSpan={5 + ALL_COLUMNS.length} className="py-6 text-center text-sm text-neutral-400">
                     No games scheduled this week.
                   </td>
                 </tr>

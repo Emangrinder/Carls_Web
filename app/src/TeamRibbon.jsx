@@ -217,7 +217,7 @@ export default function TeamRibbon() {
   }, [])
 
   return (
-    <div className="sticky top-0 z-10 flex w-full items-center gap-4 border-b border-neutral-200 bg-white px-4 py-2 dark:border-neutral-800 dark:bg-neutral-950">
+    <div className="sticky top-0 z-50 flex w-full items-center gap-4 border-b border-neutral-200 bg-white px-4 py-2 dark:border-neutral-800 dark:bg-neutral-950">
       <Link to="/" className="shrink-0 pr-4">
         <SyncRing>
           <Logo team="NFL" />
