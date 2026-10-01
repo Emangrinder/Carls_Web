@@ -24,12 +24,14 @@ async function fetchAllRows(queryFactory) {
 const SEASONS = [2026, 2025, 2024]
 const CURRENT_SEASON = SEASONS[0]
 const DEFAULT_SEASON = 2025
-// The depth-chart hover card's stats always look back at the most recent
-// *completed* season, independent of the season-toggle above the schedule
-// -- the depth chart itself (from depth_chart_ranks) has no season
-// dimension, it's always "right now," so its stats popup needs a fixed
-// reference season rather than following whichever season tab is active.
-const STATS_SEASON = 2025
+// The depth-chart hover card's stats are pinned to this season, independent
+// of the season-toggle above the schedule -- the depth chart itself (from
+// depth_chart_ranks) has no season dimension, it's always "right now," so
+// its stats popup needs a fixed reference season rather than following
+// whichever season tab is active. Set to the current in-progress season
+// (not "most recent completed") so the hover card reflects this year's
+// games as they're played, rather than lagging a full year behind.
+const STATS_SEASON = 2026
 const WEEKS_PART1 = Array.from({ length: 9 }, (_, i) => i + 1) // 1-9
 const WEEKS_PART2 = Array.from({ length: 9 }, (_, i) => i + 10) // 10-18
 const POSTSEASON_LABELS = { WC: 'WC', DIV: 'DIV', CON: 'CONF', SB: 'SB' }
