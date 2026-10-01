@@ -172,31 +172,100 @@ const SPECIAL_TEAMS_COLUMNS = [
 
 const ALL_COLUMNS = [...OFFENSE_COLUMNS, ...DEFENSE_COLUMNS, ...SPECIAL_TEAMS_COLUMNS]
 
+function sumValues(...vals) {
+  if (vals.some((v) => v == null || Number.isNaN(v))) return null
+  return vals.reduce((a, b) => a + b, 0)
+}
+
+const pydCol = OFFENSE_COLUMNS.find((c) => c.key === 'pyd')
+const rydCol = OFFENSE_COLUMNS.find((c) => c.key === 'ryd')
+const cmpCol = OFFENSE_COLUMNS.find((c) => c.key === 'cmp')
+const skaCol = OFFENSE_COLUMNS.find((c) => c.key === 'ska')
+const toCol = OFFENSE_COLUMNS.find((c) => c.key === 'to')
+const osnapCol = OFFENSE_COLUMNS.find((c) => c.key === 'osnap')
+const skCol = DEFENSE_COLUMNS.find((c) => c.key === 'sk')
+const qbhCol = DEFENSE_COLUMNS.find((c) => c.key === 'qbh')
+const intCol = DEFENSE_COLUMNS.find((c) => c.key === 'int')
+const pdCol = DEFENSE_COLUMNS.find((c) => c.key === 'pd')
+const dsnapCol = DEFENSE_COLUMNS.find((c) => c.key === 'dsnap')
+
+// The default (no group isolated) view condenses each group down to a
+// handful of combined stats instead of every column at once -- each
+// combined one's `value` just re-adds two of the full table's own
+// columns (same source of truth as the toggled-open view, not a
+// separately maintained formula) so the two never drift out of sync.
+const OFFENSE_SUMMARY_COLUMNS = [
+  osnapCol,
+  {
+    key: 'totyd',
+    label: 'Tot Yd/G',
+    title: "Combined Pass Yds/G + Rush Yds/G differential (opponent allowed minus this team's own)",
+    value: (team, opp) => sumValues(pydCol.value(team, opp), rydCol.value(team, opp)),
+  },
+  cmpCol,
+  {
+    key: 'oppd',
+    label: 'Opp-D',
+    title:
+      "Combined Sacks Allowed/G + Turnovers/G differential -- positive is BAD (both halves already read that way before this sum)",
+    value: (team, opp) => sumValues(skaCol.value(team, opp), toCol.value(team, opp)),
+    invert: true,
+  },
+]
+
+const DEFENSE_SUMMARY_COLUMNS = [
+  dsnapCol,
+  {
+    key: 'pressure',
+    label: 'Pressure/G',
+    title: 'Combined Sacks/G + QB Hits/G differential',
+    value: (team, opp) => sumValues(skCol.value(team, opp), qbhCol.value(team, opp)),
+  },
+  {
+    key: 'coverage',
+    label: 'Coverage',
+    // PD/A is a per-100-attempts rate and INT/G is a per-game count --
+    // different units added together, per request, not a unit mistake.
+    title: 'Combined Passes Defended rate + Interceptions/G differential',
+    value: (team, opp) => sumValues(pdCol.value(team, opp), intCol.value(team, opp)),
+  },
+]
+
+const SUMMARY_COLUMNS = [...OFFENSE_SUMMARY_COLUMNS, ...DEFENSE_SUMMARY_COLUMNS, ...SPECIAL_TEAMS_COLUMNS]
+const SUMMARY_ONLY_COLUMNS = [
+  OFFENSE_SUMMARY_COLUMNS.find((c) => c.key === 'totyd'),
+  OFFENSE_SUMMARY_COLUMNS.find((c) => c.key === 'oppd'),
+  DEFENSE_SUMMARY_COLUMNS.find((c) => c.key === 'pressure'),
+  DEFENSE_SUMMARY_COLUMNS.find((c) => c.key === 'coverage'),
+]
+
 // The three collapsible groups, keyed for the activeGroup/groupSortMode
 // state below -- clicking a group header isolates it (hiding the other
 // two entirely, not just visually fading them, to actually reclaim the
-// space) and cycles through sorting rows by that group's own green/red
-// count on repeat clicks of the SAME group; clicking a different group
-// switches which one is isolated and resets the sort back to plain.
+// space), showing its FULL column set (unchanged from before), and cycles
+// through sorting rows by that group's own green/red count on repeat
+// clicks of the SAME group; clicking a different group switches which one
+// is isolated and resets the sort back to plain. With nothing isolated,
+// each group instead shows its condensed summaryColumns.
 const GROUPS = {
-  offense: { label: 'Offense', columns: OFFENSE_COLUMNS },
-  defense: { label: 'Defense', columns: DEFENSE_COLUMNS },
-  specialTeams: { label: 'Special Teams', columns: SPECIAL_TEAMS_COLUMNS },
+  offense: { label: 'Offense', columns: OFFENSE_COLUMNS, summaryColumns: OFFENSE_SUMMARY_COLUMNS },
+  defense: { label: 'Defense', columns: DEFENSE_COLUMNS, summaryColumns: DEFENSE_SUMMARY_COLUMNS },
+  specialTeams: { label: 'Special Teams', columns: SPECIAL_TEAMS_COLUMNS, summaryColumns: SPECIAL_TEAMS_COLUMNS },
 }
 
-// Index (within ALL_COLUMNS) where the Defense and Special Teams groups
-// each start -- used to draw a divider on just that column's leading edge,
-// visually separating the three stat groups as you scan across the row.
-// Only meaningful when all three groups are showing side by side -- a
-// single isolated group has nothing adjacent to divide from.
-const DEFENSE_START = OFFENSE_COLUMNS.length
-const SPECIAL_TEAMS_START = OFFENSE_COLUMNS.length + DEFENSE_COLUMNS.length
+// Index (within SUMMARY_COLUMNS) where the Defense and Special Teams
+// groups each start -- used to draw a divider on just that column's
+// leading edge, visually separating the three stat groups as you scan
+// across the row. Only meaningful in the default (nothing isolated) view,
+// since a single isolated group has nothing adjacent to divide from.
+const SUMMARY_DEFENSE_START = OFFENSE_SUMMARY_COLUMNS.length
+const SUMMARY_SPECIAL_START = OFFENSE_SUMMARY_COLUMNS.length + DEFENSE_SUMMARY_COLUMNS.length
 const GROUP_DIVIDER = 'border-l-2 border-neutral-300 dark:border-neutral-700'
 
 function groupStartBorder(col, isolated) {
   if (isolated) return ''
-  const index = ALL_COLUMNS.indexOf(col)
-  return index === DEFENSE_START || index === SPECIAL_TEAMS_START ? GROUP_DIVIDER : ''
+  const index = SUMMARY_COLUMNS.indexOf(col)
+  return index === SUMMARY_DEFENSE_START || index === SUMMARY_SPECIAL_START ? GROUP_DIVIDER : ''
 }
 
 // +1 green / -1 red / 0 neither, matching exactly what diffColor/vulnColor
@@ -467,7 +536,7 @@ export default function NFLMatchupPage() {
   // underlying rows change (not on every sort/re-render).
   const columnScale = useMemo(() => {
     const scale = new Map()
-    for (const c of ALL_COLUMNS) {
+    for (const c of [...ALL_COLUMNS, ...SUMMARY_ONLY_COLUMNS]) {
       let maxAbs = 0
       for (const r of rows) {
         const v = c.value(r.teamStats, r.oppStats)
@@ -478,10 +547,11 @@ export default function NFLMatchupPage() {
     return scale
   }, [rows])
 
-  // Isolating a group's own columns to just that group, so the other two
-  // groups' columns disappear from the DOM entirely rather than merely
-  // being hidden -- that's what actually reclaims the horizontal space.
-  const visibleColumns = activeGroup ? GROUPS[activeGroup].columns : ALL_COLUMNS
+  // Isolating a group shows its FULL columns (other two groups' columns
+  // disappear from the DOM entirely, not just hidden, to actually reclaim
+  // the space); with nothing isolated, every group shows its condensed
+  // summaryColumns instead.
+  const visibleColumns = activeGroup ? GROUPS[activeGroup].columns : SUMMARY_COLUMNS
 
   const sortedRows = useMemo(() => {
     // A second click on the already-isolated group's header sorts by how
@@ -508,7 +578,9 @@ export default function NFLMatchupPage() {
       if (sortKey === 'kickoff') return kickoffMs(r.game)
       if (sortKey === 'spread') return teamSpread(r.game.spread_line, r.opp.isHome)
       if (sortKey === 'team') return r.team
-      const col = ALL_COLUMNS.find((c) => c.key === sortKey)
+      // visibleColumns, not ALL_COLUMNS -- sortKey can only ever be a key
+      // that was actually clickable, which depends on summary vs. isolated.
+      const col = visibleColumns.find((c) => c.key === sortKey)
       return col ? col.value(r.teamStats, r.oppStats) : null
     }
     return [...rows].sort((a, b) => {
@@ -539,6 +611,12 @@ export default function NFLMatchupPage() {
       setActiveGroup(null)
       setGroupSortMode(null)
     }
+  }
+
+  // How many columns a group's own header <th> should colSpan -- its full
+  // count while isolated, its condensed summary count otherwise.
+  function headerColSpan(group) {
+    return activeGroup === group ? GROUPS[group].columns.length : GROUPS[group].summaryColumns.length
   }
 
   function handleSort(key) {
@@ -608,7 +686,7 @@ export default function NFLMatchupPage() {
                 </th>
                 {(!activeGroup || activeGroup === 'offense') && (
                   <th
-                    colSpan={OFFENSE_COLUMNS.length}
+                    colSpan={headerColSpan('offense')}
                     className={`${thBase} px-2 py-2 text-center font-medium`}
                     onClick={() => handleGroupHeaderClick('offense')}
                   >
@@ -618,7 +696,7 @@ export default function NFLMatchupPage() {
                 )}
                 {(!activeGroup || activeGroup === 'defense') && (
                   <th
-                    colSpan={DEFENSE_COLUMNS.length}
+                    colSpan={headerColSpan('defense')}
                     className={`${thBase} ${activeGroup ? '' : GROUP_DIVIDER} px-2 py-2 text-center font-medium`}
                     onClick={() => handleGroupHeaderClick('defense')}
                   >
@@ -628,7 +706,7 @@ export default function NFLMatchupPage() {
                 )}
                 {(!activeGroup || activeGroup === 'specialTeams') && (
                   <th
-                    colSpan={SPECIAL_TEAMS_COLUMNS.length}
+                    colSpan={headerColSpan('specialTeams')}
                     className={`${thBase} ${activeGroup ? '' : GROUP_DIVIDER} px-2 py-2 text-center font-medium`}
                     onClick={() => handleGroupHeaderClick('specialTeams')}
                   >
