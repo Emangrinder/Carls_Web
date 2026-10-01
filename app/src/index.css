@@ -19,6 +19,17 @@ body {
 
 .animate-ribbon {
   animation: ribbon-scroll 40s linear infinite;
+  /* Safari-specific: an infinite transform animation nested inside a
+     position:sticky ancestor (TeamRibbon's own container) plus a
+     mask-image on its immediate parent (the fade-edges wrapper) is a
+     known WebKit bug pattern where the animation freezes because Safari
+     never promotes this element onto its own GPU compositing layer --
+     Chrome/Firefox don't need the hint, Safari does. will-change forces
+     that layer; backface-visibility is the usual pair for keeping it
+     stable once promoted. */
+  will-change: transform;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
 }
 
 /* Keeps scrolling (wheel/trackpad/keyboard/drag) fully working while
