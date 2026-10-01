@@ -68,6 +68,13 @@ const OFFENSE_COLUMNS = [
       ),
     invert: true,
   },
+  {
+    key: 'osnap',
+    label: 'OSnp/G',
+    title:
+      "Defense Snaps/G (opponent's defensive workload, i.e. how many plays they typically face) minus Offense Snaps/G (this team's own offense) -- more is GOOD here (more plays run this week than usual)",
+    value: (team, opp) => diff(opp.defense_snaps_avg, team.offense_snaps_avg),
+  },
 ]
 
 const DEFENSE_COLUMNS = [
@@ -115,6 +122,14 @@ const DEFENSE_COLUMNS = [
     vulnerability: true,
     unsigned: true,
   },
+  {
+    key: 'dsnap',
+    label: 'DSnp/G',
+    title:
+      "Offense Snaps/G (opponent's offensive pace/volume) minus Defense Snaps/G (this team's own defense) -- positive is BAD here (this team's defense facing more plays than usual)",
+    value: (team, opp) => diff(opp.offense_snaps_avg, team.defense_snaps_avg),
+    invert: true,
+  },
 ]
 
 // Returns are neither this team's offense nor its defense -- their own
@@ -157,15 +172,44 @@ const SPECIAL_TEAMS_COLUMNS = [
 
 const ALL_COLUMNS = [...OFFENSE_COLUMNS, ...DEFENSE_COLUMNS, ...SPECIAL_TEAMS_COLUMNS]
 
+// The three collapsible groups, keyed for the activeGroup/groupSortMode
+// state below -- clicking a group header isolates it (hiding the other
+// two entirely, not just visually fading them, to actually reclaim the
+// space) and cycles through sorting rows by that group's own green/red
+// count on repeat clicks of the SAME group; clicking a different group
+// switches which one is isolated and resets the sort back to plain.
+const GROUPS = {
+  offense: { label: 'Offense', columns: OFFENSE_COLUMNS },
+  defense: { label: 'Defense', columns: DEFENSE_COLUMNS },
+  specialTeams: { label: 'Special Teams', columns: SPECIAL_TEAMS_COLUMNS },
+}
+
 // Index (within ALL_COLUMNS) where the Defense and Special Teams groups
 // each start -- used to draw a divider on just that column's leading edge,
 // visually separating the three stat groups as you scan across the row.
+// Only meaningful when all three groups are showing side by side -- a
+// single isolated group has nothing adjacent to divide from.
 const DEFENSE_START = OFFENSE_COLUMNS.length
 const SPECIAL_TEAMS_START = OFFENSE_COLUMNS.length + DEFENSE_COLUMNS.length
 const GROUP_DIVIDER = 'border-l-2 border-neutral-300 dark:border-neutral-700'
 
-function groupStartBorder(index) {
+function groupStartBorder(col, isolated) {
+  if (isolated) return ''
+  const index = ALL_COLUMNS.indexOf(col)
   return index === DEFENSE_START || index === SPECIAL_TEAMS_START ? GROUP_DIVIDER : ''
+}
+
+// +1 green / -1 red / 0 neither, matching exactly what diffColor/vulnColor
+// would render for this cell -- the shared source of truth for both the
+// cell's own color and the group-level green/red row counts below.
+function columnSentiment(col, teamStats, oppStats) {
+  const v = col.value(teamStats, oppStats)
+  if (v == null || Number.isNaN(v)) return 0
+  if (col.vulnerability) return v !== 0 ? -1 : 0
+  const colorValue = col.invert ? -v : v
+  if (colorValue > 0) return 1
+  if (colorValue < 0) return -1
+  return 0
 }
 
 function fmtDiff(n, isPct, unsigned) {
@@ -251,6 +295,19 @@ function OppCell({ opp }) {
   )
 }
 
+// Shows which phase of the click-cycle a group header is currently in --
+// nothing when it's not the isolated group (or isolated with no sort yet),
+// a green up-arrow for "most green stats first", red down-arrow for "most
+// red stats first".
+function GroupSortIndicator({ active, mode }) {
+  if (!active || !mode) return null
+  return (
+    <span className={`ml-1 ${mode === 'green' ? 'text-green-500' : 'text-red-500'}`}>
+      {mode === 'green' ? '▲' : '▼'}
+    </span>
+  )
+}
+
 function fmtKickoff(gameday, gametime) {
   if (!gameday) return 'TBD'
   const dateStr = new Date(`${gameday}T00:00:00`).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
@@ -284,6 +341,11 @@ export default function NFLMatchupPage() {
   const [error, setError] = useState(null)
   const [sortKey, setSortKey] = useState('kickoff')
   const [sortDir, setSortDir] = useState('asc')
+  // null | 'offense' | 'defense' | 'specialTeams' -- which group (if any)
+  // is isolated right now, collapsing the other two away entirely.
+  const [activeGroup, setActiveGroup] = useState(null)
+  // null | 'green' | 'red' -- only meaningful while activeGroup is set.
+  const [groupSortMode, setGroupSortMode] = useState(null)
 
   // Find the current (season, week) the same way MatchesPage/TeamRibbon do.
   useEffect(() => {
@@ -416,7 +478,32 @@ export default function NFLMatchupPage() {
     return scale
   }, [rows])
 
+  // Isolating a group's own columns to just that group, so the other two
+  // groups' columns disappear from the DOM entirely rather than merely
+  // being hidden -- that's what actually reclaims the horizontal space.
+  const visibleColumns = activeGroup ? GROUPS[activeGroup].columns : ALL_COLUMNS
+
   const sortedRows = useMemo(() => {
+    // A second click on the already-isolated group's header sorts by how
+    // many of ITS OWN columns read green (then red on a third click)
+    // instead of the normal single-column sort -- a quick "which matchups
+    // favor this unit the most" read across the whole group at once.
+    if (activeGroup && groupSortMode) {
+      const cols = GROUPS[activeGroup].columns
+      const withCount = rows.map((r) => {
+        let green = 0
+        let red = 0
+        for (const c of cols) {
+          const s = columnSentiment(c, r.teamStats, r.oppStats)
+          if (s > 0) green++
+          else if (s < 0) red++
+        }
+        return { r, count: groupSortMode === 'green' ? green : red }
+      })
+      withCount.sort((a, b) => b.count - a.count)
+      return withCount.map((x) => x.r)
+    }
+
     const getValue = (r) => {
       if (sortKey === 'kickoff') return kickoffMs(r.game)
       if (sortKey === 'spread') return teamSpread(r.game.spread_line, r.opp.isHome)
@@ -435,7 +522,24 @@ export default function NFLMatchupPage() {
       }
       return sortDir === 'asc' ? result : -result
     })
-  }, [rows, sortKey, sortDir])
+  }, [rows, sortKey, sortDir, activeGroup, groupSortMode])
+
+  // Clicking a group not currently isolated switches to it (plain order).
+  // Clicking the ALREADY-isolated group cycles plain -> green count ->
+  // red count -> back to all three groups showing again.
+  function handleGroupHeaderClick(group) {
+    if (activeGroup !== group) {
+      setActiveGroup(group)
+      setGroupSortMode(null)
+    } else if (groupSortMode === null) {
+      setGroupSortMode('green')
+    } else if (groupSortMode === 'green') {
+      setGroupSortMode('red')
+    } else {
+      setActiveGroup(null)
+      setGroupSortMode(null)
+    }
+  }
 
   function handleSort(key) {
     if (key === sortKey) {
@@ -460,7 +564,25 @@ export default function NFLMatchupPage() {
       {error && <p className="text-sm text-red-500">Error: {error}</p>}
 
       {!loading && !error && (
-        <div className="overflow-auto">
+        <>
+          <div className="mb-3 flex gap-2">
+            {Object.entries(GROUPS).map(([key, g]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => handleGroupHeaderClick(key)}
+                className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                  activeGroup === key
+                    ? 'bg-neutral-900 text-white dark:bg-white dark:text-neutral-900'
+                    : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-700'
+                }`}
+              >
+                {g.label}
+                <GroupSortIndicator active={activeGroup === key} mode={groupSortMode} />
+              </button>
+            ))}
+          </div>
+          <div className="overflow-auto">
           <table className="w-full min-w-[1100px] border-collapse text-sm">
             <thead>
               <tr className="border-b border-neutral-200 text-left text-neutral-500 dark:border-neutral-800">
@@ -484,15 +606,36 @@ export default function NFLMatchupPage() {
                 <th className={`${thBase} px-2 py-2 text-right font-medium`} onClick={() => handleSort('spread')}>
                   Spread
                 </th>
-                <th colSpan={OFFENSE_COLUMNS.length} className="px-2 py-2 text-center font-medium">
-                  Offense
-                </th>
-                <th colSpan={DEFENSE_COLUMNS.length} className={`${GROUP_DIVIDER} px-2 py-2 text-center font-medium`}>
-                  Defense
-                </th>
-                <th colSpan={SPECIAL_TEAMS_COLUMNS.length} className={`${GROUP_DIVIDER} px-2 py-2 text-center font-medium`}>
-                  Special Teams
-                </th>
+                {(!activeGroup || activeGroup === 'offense') && (
+                  <th
+                    colSpan={OFFENSE_COLUMNS.length}
+                    className={`${thBase} px-2 py-2 text-center font-medium`}
+                    onClick={() => handleGroupHeaderClick('offense')}
+                  >
+                    Offense
+                    <GroupSortIndicator active={activeGroup === 'offense'} mode={groupSortMode} />
+                  </th>
+                )}
+                {(!activeGroup || activeGroup === 'defense') && (
+                  <th
+                    colSpan={DEFENSE_COLUMNS.length}
+                    className={`${thBase} ${activeGroup ? '' : GROUP_DIVIDER} px-2 py-2 text-center font-medium`}
+                    onClick={() => handleGroupHeaderClick('defense')}
+                  >
+                    Defense
+                    <GroupSortIndicator active={activeGroup === 'defense'} mode={groupSortMode} />
+                  </th>
+                )}
+                {(!activeGroup || activeGroup === 'specialTeams') && (
+                  <th
+                    colSpan={SPECIAL_TEAMS_COLUMNS.length}
+                    className={`${thBase} ${activeGroup ? '' : GROUP_DIVIDER} px-2 py-2 text-center font-medium`}
+                    onClick={() => handleGroupHeaderClick('specialTeams')}
+                  >
+                    Special Teams
+                    <GroupSortIndicator active={activeGroup === 'specialTeams'} mode={groupSortMode} />
+                  </th>
+                )}
               </tr>
               <tr className="border-b border-neutral-200 text-left text-[11px] text-neutral-400 dark:border-neutral-800">
                 <th className={`${STICKY_CELL} left-0`} style={{ width: TEAM_COL_WIDTH }}></th>
@@ -500,10 +643,10 @@ export default function NFLMatchupPage() {
                 <th className={STICKY_CELL} style={{ left: TEAM_COL_WIDTH, width: OPP_COL_WIDTH }}></th>
                 <th></th>
                 <th></th>
-                {ALL_COLUMNS.map((c, i) => (
+                {visibleColumns.map((c) => (
                   <th
                     key={c.key}
-                    className={`${thBase} ${groupStartBorder(i)} px-2 pb-1 text-right font-normal`}
+                    className={`${thBase} ${groupStartBorder(c, !!activeGroup)} px-2 pb-1 text-right font-normal`}
                     onClick={() => handleSort(c.key)}
                     title={c.title}
                   >
@@ -530,14 +673,14 @@ export default function NFLMatchupPage() {
                   <td className="px-2 py-2 text-right tabular-nums text-xs text-neutral-400">
                     {fmtSpread(teamSpread(r.game.spread_line, r.opp.isHome))}
                   </td>
-                  {ALL_COLUMNS.map((c, i) => {
+                  {visibleColumns.map((c) => {
                     const v = c.value(r.teamStats, r.oppStats)
                     const colorValue = c.invert && v != null ? -v : v
                     const color = c.vulnerability ? vulnColor(v) : diffColor(colorValue)
                     return (
                       <td
                         key={c.key}
-                        className={`${groupStartBorder(i)} px-2 py-2 text-right tabular-nums ${color}`}
+                        className={`${groupStartBorder(c, !!activeGroup)} px-2 py-2 text-right tabular-nums ${color}`}
                         style={{ opacity: diffOpacity(v, columnScale.get(c.key)) }}
                       >
                         {fmtDiff(v, c.isPct, c.unsigned)}
@@ -548,14 +691,15 @@ export default function NFLMatchupPage() {
               ))}
               {sortedRows.length === 0 && (
                 <tr>
-                  <td colSpan={5 + ALL_COLUMNS.length} className="py-6 text-center text-sm text-neutral-400">
+                  <td colSpan={5 + visibleColumns.length} className="py-6 text-center text-sm text-neutral-400">
                     No games scheduled this week.
                   </td>
                 </tr>
               )}
             </tbody>
           </table>
-        </div>
+          </div>
+        </>
       )}
     </div>
   )
